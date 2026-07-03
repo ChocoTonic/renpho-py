@@ -1,0 +1,11 @@
+.venv
+.env
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+uv.lock
+
+renpho_data/
+.coverage

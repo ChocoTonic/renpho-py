@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrenpho"
+version = "1.0.0"
+description = "Unofficial Renpho Health API client for Python — pull body composition data from Renpho smart scales."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "ChocoTonic" }]
+maintainers = [{ name = "ChocoTonic" }]
+keywords = [
+    "renpho",
+    "renpho-api",
+    "health",
+    "body-composition",
+    "smart-scale",
+    "api-client",
+    "python",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = [
+    "requests>=2.28",
+    "pycryptodome>=3.15",
+]
+
+[project.optional-dependencies]
+dotenv = ["python-dotenv>=1.0"]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/ChocoTonic/pyrenpho"
+Repository = "https://github.com/ChocoTonic/pyrenpho"
+Issues = "https://github.com/ChocoTonic/pyrenpho/issues"
+Changelog = "https://github.com/ChocoTonic/pyrenpho/blob/main/CHANGELOG.md"
+
+[project.scripts]
+renpho = "renpho.cli:main"
+
+[tool.setuptools]
+packages = ["renpho"]
+
+[tool.setuptools.package-data]
+renpho = ["py.typed"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]

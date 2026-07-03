@@ -1,0 +1,16 @@
+pyrenpho
+========
+
+This project began as a copy of the MIT-licensed `renpho-api`
+(https://github.com/danvaneijck/renpho-api) by danvaneijck, and is now
+independently maintained. The original license and copyright are preserved in
+LICENSE.
+
+The underlying Renpho cloud API was reverse-engineered; the approach and
+protocol details are based on RenphoGarminSync-CLI
+(https://github.com/forkerer/RenphoGarminSync-CLI).
+
+pyrenpho is UNOFFICIAL and is not affiliated with, endorsed by, or supported by
+Renpho or any of its affiliates. "Renpho" is a trademark of its respective
+owner and is used here only to describe the API this client targets. Use at
+your own risk and in accordance with Renpho's terms of service.
