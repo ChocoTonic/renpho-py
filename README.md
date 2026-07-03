@@ -1,8 +1,8 @@
-# pyrenpho — Renpho Health API client for Python
+# renpho-py — Renpho Health API client for Python
 
-[![PyPI](https://img.shields.io/pypi/v/pyrenpho)](https://pypi.org/project/pyrenpho/)
-[![CI](https://github.com/ChocoTonic/pyrenpho/actions/workflows/ci.yml/badge.svg)](https://github.com/ChocoTonic/pyrenpho/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/pypi/pyversions/pyrenpho)](https://pypi.org/project/pyrenpho/)
+[![PyPI](https://img.shields.io/pypi/v/renpho-py)](https://pypi.org/project/renpho-py/)
+[![CI](https://github.com/ChocoTonic/renpho-py/actions/workflows/ci.yml/badge.svg)](https://github.com/ChocoTonic/renpho-py/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/renpho-py)](https://pypi.org/project/renpho-py/)
 
 Unofficial **Renpho Health API** client for **Python**. Pull body composition
 measurements from Renpho smart scales programmatically.
@@ -10,9 +10,9 @@ measurements from Renpho smart scales programmatically.
 > **Unofficial.** Not affiliated with, endorsed by, or supported by Renpho. Use
 > at your own risk and in line with Renpho's terms of service.
 
-`pyrenpho` is an independently maintained continuation of the abandoned
+`renpho-py` is an independently maintained continuation of the abandoned
 [`renpho-api`](https://github.com/danvaneijck/renpho-api) (MIT). The import name
-is unchanged, so migrating is a one-line swap — `pip install pyrenpho` and your
+is unchanged, so migrating is a one-line swap — `pip install renpho-py` and your
 existing `from renpho import ...` code keeps working. The underlying API was
 reverse-engineered; protocol details are based on
 [RenphoGarminSync-CLI](https://github.com/forkerer/RenphoGarminSync-CLI).
@@ -20,16 +20,16 @@ reverse-engineered; protocol details are based on
 ## Installation
 
 ```bash
-pip install pyrenpho
+pip install renpho-py
 ```
 
 For `.env` file support (recommended for CLI usage):
 
 ```bash
-pip install "pyrenpho[dotenv]"
+pip install "renpho-py[dotenv]"
 ```
 
-> Migrating from `renpho-api`? `pip uninstall renpho-api && pip install pyrenpho`.
+> Migrating from `renpho-api`? `pip uninstall renpho-api && pip install renpho-py`.
 > No code changes — you still `from renpho import RenphoClient`.
 
 ## CLI Usage
@@ -182,8 +182,8 @@ Each measurement dict can contain these fields (availability depends on your sca
 ## Project Structure
 
 ```
-pyrenpho/
-├── pyproject.toml        # Package config & dependencies (dist name: pyrenpho)
+renpho-py/
+├── pyproject.toml        # Package config & dependencies (dist name: renpho-py)
 ├── README.md
 ├── CHANGELOG.md
 ├── LICENSE               # MIT (original + current attribution)

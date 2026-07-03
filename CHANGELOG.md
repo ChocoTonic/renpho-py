@@ -1,19 +1,19 @@
 # Changelog
 
-All notable changes to `pyrenpho` are documented here. This project follows
+All notable changes to `renpho-py` are documented here. This project follows
 [Semantic Versioning](https://semver.org/): breaking changes to the public API
 bump the major version only.
 
 ## [1.0.0] — 2026-07-03
 
-First release of `pyrenpho`, an independently maintained continuation of the
+First release of `renpho-py`, an independently maintained continuation of the
 abandoned [`renpho-api`](https://github.com/danvaneijck/renpho-api). Behavioral
 parity with the last `renpho-api` state plus the multi-account feature below.
 
 The public API is unchanged from `renpho-api`, so migration is a one-line swap:
 
 ```bash
-pip uninstall renpho-api && pip install pyrenpho
+pip uninstall renpho-api && pip install renpho-py
 ```
 
 Imports are identical (`from renpho import RenphoClient`).
