@@ -4,6 +4,26 @@ All notable changes to `renpho-py` are documented here. This project follows
 [Semantic Versioning](https://semver.org/): breaking changes to the public API
 bump the major version only.
 
+## [1.2.0] — 2026-07-03
+
+### Added
+- **`renpho.__version__`** — the installed package version.
+- **`Measurement` dataclass** (`renpho.models`) — opt-in typed access over the
+  raw measurement dicts via `Measurement.from_dict(m)`, mapping common
+  camelCase API keys to snake_case attributes and preserving the full payload on
+  `.raw`. Client methods still return dicts (unchanged).
+
+### Changed
+- **Internal modularization — no public API change.** `client.py` was split up:
+  error types → `renpho.exceptions`, display metadata → `renpho.metrics`, and
+  HTTP handling → a `renpho.transport.Transport` class. The `renpho` import
+  surface is unchanged and guarded by a public-API contract test
+  (`tests/test_public_api.py`).
+
+### Tooling
+- CI now runs **`ruff`** (lint) and **`mypy`** (type-check) alongside the test
+  matrix; `Makefile` gains `lint` / `typecheck` / `check` targets.
+
 ## [1.1.0] — 2026-07-03
 
 Hardening of the multi-account feature (plan P1 + P2 in
