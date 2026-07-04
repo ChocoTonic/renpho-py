@@ -18,6 +18,7 @@ from renpho.client import RenphoAPIError, RenphoClient
 
 # Top-level re-exports (renpho.__all__).
 EXPECTED_EXPORTS = [
+    "Measurement",
     "RenphoAPIError",
     "RenphoClient",
     "format_measurement",
