@@ -278,6 +278,31 @@ class RenphoClient:
 
         return all_measurements
 
+    def _shard_has_data(self, user_id, table) -> bool:
+        """Return True if ``table`` holds at least one record for ``user_id``.
+
+        A single failed request (transport error) is treated as "no data" so
+        one flaky probe cannot abort discovery of the remaining shards.
+        """
+        try:
+            encrypted_body = encrypt_request({
+                "pageNum": 1,
+                "pageSize": 1,
+                "userIds": [str(user_id)],
+                "tableName": table,
+            })
+            result = self._post(
+                ENDPOINTS["body_composition_measurements"], encrypted_body
+            )
+            if not result.get("data"):
+                return False
+            page_data = decrypt_response(result["data"])
+            return bool(self._extract_records(page_data))
+        except requests.exceptions.RequestException as e:
+            if self.debug:
+                print(f"  Probe of {table} for user {user_id} failed: {e}")
+            return False
+
     def discover_user_tables(self, user_id) -> list[str]:
         """Probe all measurement tables for a given user_id and return the ones with data.
 
@@ -286,28 +311,22 @@ class RenphoClient:
         only reports the table for the logged-in user via ``device/count``,
         so for any other linked account this method probes each suffix.
 
+        Calls :meth:`login` first if no token is set.
+
         Args:
             user_id: The user ID to probe for.
 
         Returns:
             List of table names that contain at least one record for ``user_id``.
         """
-        found: list[str] = []
-        for table in MEASUREMENT_TABLE_NAMES:
-            encrypted_body = encrypt_request({
-                "pageNum": 1,
-                "pageSize": 1,
-                "userIds": [str(user_id)],
-                "tableName": table,
-            })
-            result = self._post(ENDPOINTS["body_composition_measurements"], encrypted_body)
-            if not result.get("data"):
-                continue
-            page_data = decrypt_response(result["data"])
-            records = self._extract_records(page_data)
-            if records:
-                found.append(table)
-        return found
+        if not self.token:
+            self.login()
+
+        return [
+            table
+            for table in MEASUREMENT_TABLE_NAMES
+            if self._shard_has_data(user_id, table)
+        ]
 
     def get_all_measurements(self, extra_user_ids: list | None = None) -> list[dict]:
         """High-level helper: fetch device info then pull all measurements.
@@ -359,10 +378,15 @@ class RenphoClient:
             all_measurements.extend(measurements)
 
         for extra_uid in extra_user_ids or []:
-            for table in self.discover_user_tables(extra_uid):
-                all_measurements.extend(
-                    self.get_body_composition_measurements(table, extra_uid)
-                )
+            try:
+                for table in self.discover_user_tables(extra_uid):
+                    all_measurements.extend(
+                        self.get_body_composition_measurements(table, extra_uid)
+                    )
+            except requests.exceptions.RequestException as e:
+                if self.debug:
+                    print(f"  Failed to fetch extra user {extra_uid}: {e}")
+                continue
 
         # Dedupe by record id (each measurement is a unique server-side row).
         seen_ids: set = set()

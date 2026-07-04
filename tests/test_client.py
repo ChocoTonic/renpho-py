@@ -4,9 +4,10 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from renpho.client import RenphoAPIError, RenphoClient, _check_response
-from renpho.constants import SUCCESS_CODES
+from renpho.constants import MEASUREMENT_TABLE_NAMES, SUCCESS_CODES
 from renpho.crypto import encrypt_request
 
 
@@ -259,3 +260,72 @@ class TestGetAllMeasurementsMultiAccount:
         # discovery is never invoked on the single-account path.
         mock_discover.assert_not_called()
         assert [m["id"] for m in result] == [2, 1]
+
+    def test_extra_account_failure_is_isolated(self):
+        """A failure fetching one extra account must not discard the rest."""
+        client = self._make_client()
+        device_info = {
+            "scale": [{"tableName": "measurements_info_1", "count": 0, "userIds": [123]}]
+        }
+        primary = [{"id": 1, "weight": 70.0, "timeStamp": 100}]
+        with (
+            patch.object(client, "get_device_info", return_value=device_info),
+            patch.object(
+                client,
+                "discover_user_tables",
+                side_effect=requests.exceptions.ConnectionError("boom"),
+            ),
+            patch.object(
+                client, "get_body_composition_measurements", return_value=primary
+            ),
+        ):
+            result = client.get_all_measurements(extra_user_ids=["999"])
+
+        # The primary account's data survives the extra-account failure.
+        assert [m["id"] for m in result] == [1]
+
+
+class TestDiscoverUserTablesHardening:
+    """Token guard and per-shard error isolation."""
+
+    def _make_client(self, *, token="tok"):
+        client = RenphoClient("a@b.com", "p")
+        client.token = token
+        client.user_id = 123
+        return client
+
+    def _encrypted_records(self, records):
+        return {
+            "code": 101,
+            "msg": "success",
+            "data": encrypt_request(records)["encryptData"],
+        }
+
+    def _no_data(self):
+        return {"code": 101, "msg": "success", "data": None}
+
+    def test_logs_in_when_no_token(self):
+        client = self._make_client(token=None)
+
+        def fake_login():
+            client.token = "tok"
+
+        with (
+            patch.object(client, "login", side_effect=fake_login) as mock_login,
+            patch.object(client, "_post", return_value=self._no_data()),
+        ):
+            client.discover_user_tables("999")
+
+        mock_login.assert_called_once()
+
+    def test_probe_failure_is_isolated(self):
+        client = self._make_client()
+        responses = [self._no_data()] * len(MEASUREMENT_TABLE_NAMES)
+        responses[4] = requests.exceptions.ConnectionError("flaky")  # one shard dies
+        responses[9] = self._encrypted_records([{"id": 1, "weight": 70.0}])
+
+        with patch.object(client, "_post", side_effect=responses):
+            found = client.discover_user_tables("999")
+
+        # The dead probe is skipped, not fatal; the good shard is still found.
+        assert found == ["measurements_info_9"]
