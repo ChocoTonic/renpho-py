@@ -5,8 +5,8 @@ from renpho.constants import (
     BODY_WEIGHT_SCALES,
     ENCRYPTION_KEY,
     ENDPOINTS,
-    METRICS,
 )
+from renpho.metrics import METRICS
 
 
 def test_encryption_key_length():

@@ -4,7 +4,7 @@ import datetime
 import json
 from pathlib import Path
 
-from .constants import METRICS
+from .metrics import METRICS
 
 
 def format_timestamp(ts) -> str:
