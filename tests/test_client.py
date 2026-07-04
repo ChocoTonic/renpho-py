@@ -1,13 +1,12 @@
 """Tests for renpho.client — RenphoClient unit tests."""
 
-import json
 from unittest.mock import patch
 
 import pytest
 import requests
 
 from renpho.client import RenphoAPIError, RenphoClient, _check_response
-from renpho.constants import MEASUREMENT_TABLE_NAMES, SUCCESS_CODES
+from renpho.constants import MEASUREMENT_TABLE_NAMES
 from renpho.crypto import encrypt_request
 
 
@@ -100,7 +99,8 @@ class TestGetBodyCompositionMeasurements:
 
     def test_returns_empty_when_no_data(self):
         client = self._make_client()
-        with patch.object(client, "_post", return_value={"code": 101, "msg": "success", "data": None}):
+        no_data = {"code": 101, "msg": "success", "data": None}
+        with patch.object(client, "_post", return_value=no_data):
             result = client.get_body_composition_measurements("measurements_info_0", 123)
         assert result == []
 
