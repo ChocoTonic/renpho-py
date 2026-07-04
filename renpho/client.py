@@ -1,7 +1,6 @@
 """Renpho API client for fetching scale measurements."""
 
 import json
-import sys
 from concurrent.futures import ThreadPoolExecutor
 
 import requests

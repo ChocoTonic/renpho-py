@@ -72,6 +72,10 @@ def test_error_exposes_context_code_msg():
     assert err.msg == "Unauthorized"
 
 
+def test_version_is_exposed():
+    assert isinstance(renpho.__version__, str) and renpho.__version__
+
+
 def test_package_is_typed():
     # py.typed must ship so downstream type-checkers honor our annotations.
     import importlib.resources
