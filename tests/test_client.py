@@ -286,7 +286,7 @@ class TestGetAllMeasurementsMultiAccount:
 
 
 class TestDiscoverUserTablesHardening:
-    """Token guard and per-shard error isolation."""
+    """Token guard, error isolation, caching, and concurrency."""
 
     def _make_client(self, *, token="tok"):
         client = RenphoClient("a@b.com", "p")

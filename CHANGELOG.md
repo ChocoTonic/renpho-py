@@ -4,6 +4,39 @@ All notable changes to `renpho-py` are documented here. This project follows
 [Semantic Versioning](https://semver.org/): breaking changes to the public API
 bump the major version only.
 
+## [1.1.0] — 2026-07-03
+
+Hardening of the multi-account feature (plan P1 + P2 in
+[docs/multi-account.md](docs/multi-account.md)). All additive — the public API
+remains a superset of 1.0.0.
+
+### Added
+- **Concurrent shard discovery.** `discover_user_tables(user_id, max_workers=N)`
+  and `get_all_measurements(extra_user_ids=..., max_workers=N)` can probe the 16
+  shards in parallel (each worker uses its own session, so it's thread-safe).
+  Defaults to `max_workers=1` (serial, unchanged).
+- **Discovery caching.** `discover_user_tables` now caches results per user ID on
+  the client instance. Pass `refresh=True` to re-probe; new `clear_table_cache()`
+  method to reset.
+
+### Changed
+- **Probe failures are isolated.** A transport error while probing one shard —
+  or while fetching one extra account in `get_all_measurements` — is now logged
+  (in debug mode) and skipped, instead of aborting the whole call and discarding
+  data already fetched.
+- **`discover_user_tables` logs in if needed.** It now calls `login()` when no
+  token is set, matching `get_all_measurements`.
+- **Tighter typing.** `extra_user_ids: list[str] | None`; new `UserId = int | str`
+  alias applied to the multi-account methods.
+
+### Deferred (with rationale, see docs/multi-account.md §5)
+- Reusing the probe's first page to skip a refetch — dropped: probes use
+  `pageSize=1`, so they can't seed a `pageSize=50` fetch. No real saving.
+- Weight-only secondary accounts — needs unverifiable assumptions about the
+  basic-measurements endpoint for non-logged-in users; left as a documented gap.
+- Composite dedup for `id`-less records — would change default behavior; kept
+  opt-in-only for a future minor.
+
 ## [1.0.0] — 2026-07-03
 
 First release of `renpho-py`, an independently maintained continuation of the
