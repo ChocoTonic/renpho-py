@@ -22,6 +22,10 @@ from .crypto import (
     encrypt_request,
 )
 
+# A Renpho user ID is sometimes an int (login response) and sometimes a
+# stringified int (measurement queries); accept either.
+UserId = int | str
+
 
 class RenphoAPIError(Exception):
     """Raised when the Renpho API returns an error response."""
@@ -293,7 +297,9 @@ class RenphoClient:
 
         return all_measurements
 
-    def _shard_has_data(self, user_id, table, *, session=None) -> bool:
+    def _shard_has_data(
+        self, user_id: UserId, table: str, *, session: requests.Session | None = None
+    ) -> bool:
         """Return True if ``table`` holds at least one record for ``user_id``.
 
         A single failed request (transport error) is treated as "no data" so
@@ -322,7 +328,7 @@ class RenphoClient:
 
     def discover_user_tables(
         self,
-        user_id,
+        user_id: UserId,
         *,
         refresh: bool = False,
         max_workers: int = 1,
@@ -369,10 +375,10 @@ class RenphoClient:
         self._table_cache[key] = found
         return list(found)
 
-    def _discover_concurrent(self, user_id, max_workers) -> list[str]:
+    def _discover_concurrent(self, user_id: UserId, max_workers: int) -> list[str]:
         """Probe all shards concurrently, one dedicated session per worker."""
 
-        def probe(table):
+        def probe(table: str) -> tuple[str, bool]:
             session = requests.Session()
             try:
                 return table, self._shard_has_data(user_id, table, session=session)
@@ -391,7 +397,7 @@ class RenphoClient:
 
     def get_all_measurements(
         self,
-        extra_user_ids: list | None = None,
+        extra_user_ids: list[str] | None = None,
         *,
         max_workers: int = 1,
     ) -> list[dict]:
