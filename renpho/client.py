@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from .constants import (
-    API_BASE_URL,
     APP_VERSION,
     BODY_WEIGHT_SCALES,
     ENDPOINTS,
@@ -21,6 +20,7 @@ from .crypto import (
 )
 from .exceptions import RenphoAPIError
 from .exceptions import check_response as _check_response
+from .transport import Transport
 
 # A Renpho user ID is sometimes an int (login response) and sometimes a
 # stringified int (measurement queries); accept either.
@@ -48,7 +48,7 @@ class RenphoClient:
         self.token: str | None = None
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
-        self._session = requests.Session()
+        self._transport = Transport(debug=debug)
         # Cache of shard-discovery results, keyed by str(user_id).
         self._table_cache: dict[str, list[str]] = {}
 
@@ -62,13 +62,12 @@ class RenphoClient:
         auth: bool = True,
         session: requests.Session | None = None,
     ) -> dict:
-        """Make an encrypted POST request to the Renpho API.
+        """Assemble auth headers and delegate the request to the transport.
 
         ``session`` lets callers supply their own :class:`requests.Session`
-        (used for concurrent shard probing, where sharing the client's session
-        across threads would be unsafe). Defaults to the client's session.
+        (used for concurrent shard probing, where sharing one session across
+        threads would be unsafe). Defaults to the transport's own session.
         """
-        url = f"{API_BASE_URL}/{endpoint}"
         headers: dict[str, str] = {}
         if auth and self.token:
             headers["token"] = self.token
@@ -76,19 +75,7 @@ class RenphoClient:
             headers["appVersion"] = APP_VERSION
             headers["platform"] = PLATFORM
 
-        if self.debug:
-            print(f"  POST {url}")
-            if auth and self.token:
-                print(f"  Headers: token={self.token[:20]}..., userId={self.user_id}")
-
-        resp = (session or self._session).post(url, json=body, headers=headers)
-
-        if self.debug:
-            print(f"  Status: {resp.status_code}")
-            print(f"  Response: {resp.text[:300]}")
-
-        resp.raise_for_status()
-        return resp.json()
+        return self._transport.post(endpoint, body, headers=headers, session=session)
 
     # ----- public API -----
 
