@@ -235,7 +235,7 @@ class TestGetAllMeasurementsMultiAccount:
         ):
             result = client.get_all_measurements(extra_user_ids=["999"])
 
-        mock_discover.assert_called_once_with("999")
+        mock_discover.assert_called_once_with("999", max_workers=1)
         # id 2 is deduped away; newest-first by timeStamp.
         assert [m["id"] for m in result] == [3, 2, 1]
 
@@ -329,3 +329,33 @@ class TestDiscoverUserTablesHardening:
 
         # The dead probe is skipped, not fatal; the good shard is still found.
         assert found == ["measurements_info_9"]
+
+    def test_results_are_cached_until_refresh_or_clear(self):
+        client = self._make_client()
+        n = len(MEASUREMENT_TABLE_NAMES)
+        with patch.object(client, "_post", return_value=self._no_data()) as mock_post:
+            client.discover_user_tables("999")
+            client.discover_user_tables("999")  # served from cache
+            assert mock_post.call_count == n
+
+            client.discover_user_tables("999", refresh=True)  # re-probe
+            assert mock_post.call_count == 2 * n
+
+            client.clear_table_cache()
+            client.discover_user_tables("999")  # cache cleared -> re-probe
+            assert mock_post.call_count == 3 * n
+
+    def test_concurrent_matches_serial(self):
+        client = self._make_client()
+        hits = {"measurements_info_3", "measurements_info_C"}
+
+        with patch.object(
+            client,
+            "_shard_has_data",
+            side_effect=lambda uid, table, **kw: table in hits,
+        ):
+            serial = client.discover_user_tables("999", refresh=True, max_workers=1)
+            concurrent = client.discover_user_tables("999", refresh=True, max_workers=4)
+
+        # Same set, same canonical order, regardless of concurrency.
+        assert serial == concurrent == ["measurements_info_3", "measurements_info_C"]

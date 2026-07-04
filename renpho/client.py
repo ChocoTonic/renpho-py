@@ -2,6 +2,7 @@
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -61,11 +62,25 @@ class RenphoClient:
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
         self._session = requests.Session()
+        # Cache of shard-discovery results, keyed by str(user_id).
+        self._table_cache: dict[str, list[str]] = {}
 
     # ----- internal helpers -----
 
-    def _post(self, endpoint: str, body: dict, *, auth: bool = True) -> dict:
-        """Make an encrypted POST request to the Renpho API."""
+    def _post(
+        self,
+        endpoint: str,
+        body: dict,
+        *,
+        auth: bool = True,
+        session: requests.Session | None = None,
+    ) -> dict:
+        """Make an encrypted POST request to the Renpho API.
+
+        ``session`` lets callers supply their own :class:`requests.Session`
+        (used for concurrent shard probing, where sharing the client's session
+        across threads would be unsafe). Defaults to the client's session.
+        """
         url = f"{API_BASE_URL}/{endpoint}"
         headers: dict[str, str] = {}
         if auth and self.token:
@@ -79,7 +94,7 @@ class RenphoClient:
             if auth and self.token:
                 print(f"  Headers: token={self.token[:20]}..., userId={self.user_id}")
 
-        resp = self._session.post(url, json=body, headers=headers)
+        resp = (session or self._session).post(url, json=body, headers=headers)
 
         if self.debug:
             print(f"  Status: {resp.status_code}")
@@ -278,7 +293,7 @@ class RenphoClient:
 
         return all_measurements
 
-    def _shard_has_data(self, user_id, table) -> bool:
+    def _shard_has_data(self, user_id, table, *, session=None) -> bool:
         """Return True if ``table`` holds at least one record for ``user_id``.
 
         A single failed request (transport error) is treated as "no data" so
@@ -292,7 +307,9 @@ class RenphoClient:
                 "tableName": table,
             })
             result = self._post(
-                ENDPOINTS["body_composition_measurements"], encrypted_body
+                ENDPOINTS["body_composition_measurements"],
+                encrypted_body,
+                session=session,
             )
             if not result.get("data"):
                 return False
@@ -303,7 +320,13 @@ class RenphoClient:
                 print(f"  Probe of {table} for user {user_id} failed: {e}")
             return False
 
-    def discover_user_tables(self, user_id) -> list[str]:
+    def discover_user_tables(
+        self,
+        user_id,
+        *,
+        refresh: bool = False,
+        max_workers: int = 1,
+    ) -> list[str]:
         """Probe all measurement tables for a given user_id and return the ones with data.
 
         Body composition scales shard measurements across 16 tables
@@ -311,24 +334,67 @@ class RenphoClient:
         only reports the table for the logged-in user via ``device/count``,
         so for any other linked account this method probes each suffix.
 
+        Results are cached per user ID on the client instance; pass
+        ``refresh=True`` to re-probe (or call :meth:`clear_table_cache`). Set
+        ``max_workers`` above 1 to probe shards concurrently (each worker uses
+        its own session, so this is thread-safe).
+
         Calls :meth:`login` first if no token is set.
 
         Args:
             user_id: The user ID to probe for.
+            refresh: Ignore any cached result and probe again.
+            max_workers: Number of concurrent probe workers (1 = serial).
 
         Returns:
-            List of table names that contain at least one record for ``user_id``.
+            List of table names (in canonical shard order) that contain at
+            least one record for ``user_id``.
         """
         if not self.token:
             self.login()
 
-        return [
-            table
-            for table in MEASUREMENT_TABLE_NAMES
-            if self._shard_has_data(user_id, table)
-        ]
+        key = str(user_id)
+        if not refresh and key in self._table_cache:
+            return list(self._table_cache[key])
 
-    def get_all_measurements(self, extra_user_ids: list | None = None) -> list[dict]:
+        if max_workers and max_workers > 1:
+            found = self._discover_concurrent(user_id, max_workers)
+        else:
+            found = [
+                table
+                for table in MEASUREMENT_TABLE_NAMES
+                if self._shard_has_data(user_id, table)
+            ]
+
+        self._table_cache[key] = found
+        return list(found)
+
+    def _discover_concurrent(self, user_id, max_workers) -> list[str]:
+        """Probe all shards concurrently, one dedicated session per worker."""
+
+        def probe(table):
+            session = requests.Session()
+            try:
+                return table, self._shard_has_data(user_id, table, session=session)
+            finally:
+                session.close()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            has_data = dict(executor.map(probe, MEASUREMENT_TABLE_NAMES))
+
+        # Preserve canonical shard order regardless of completion order.
+        return [table for table in MEASUREMENT_TABLE_NAMES if has_data.get(table)]
+
+    def clear_table_cache(self) -> None:
+        """Clear cached shard-discovery results (see :meth:`discover_user_tables`)."""
+        self._table_cache.clear()
+
+    def get_all_measurements(
+        self,
+        extra_user_ids: list | None = None,
+        *,
+        max_workers: int = 1,
+    ) -> list[dict]:
         """High-level helper: fetch device info then pull all measurements.
 
         Tries the body composition endpoint first (used by impedance scales).
@@ -344,7 +410,11 @@ class RenphoClient:
                 to other linked accounts (e.g. a separate account from before a
                 Google SSO migration). Each id is probed against all known
                 measurement tables. Pass these when you have multiple Renpho
-                accounts associated with the same physical scale.
+                accounts associated with the same physical scale. A failure while
+                fetching one extra account is logged (in debug mode) and skipped,
+                so it never discards the accounts already fetched.
+            max_workers: Concurrency for the per-extra-account shard discovery
+                (passed to :meth:`discover_user_tables`; 1 = serial).
 
         Returns:
             List of measurement dicts sorted by timestamp (newest first),
@@ -379,7 +449,9 @@ class RenphoClient:
 
         for extra_uid in extra_user_ids or []:
             try:
-                for table in self.discover_user_tables(extra_uid):
+                for table in self.discover_user_tables(
+                    extra_uid, max_workers=max_workers
+                ):
                     all_measurements.extend(
                         self.get_body_composition_measurements(table, extra_uid)
                     )
