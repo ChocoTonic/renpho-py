@@ -12,7 +12,6 @@ from .constants import (
     ENDPOINTS,
     MEASUREMENT_TABLE_NAMES,
     PLATFORM,
-    SUCCESS_CODES,
 )
 from .crypto import (
     decrypt_response,
@@ -20,29 +19,14 @@ from .crypto import (
     encrypt_empty_object,
     encrypt_request,
 )
+from .exceptions import RenphoAPIError
+from .exceptions import check_response as _check_response
 
 # A Renpho user ID is sometimes an int (login response) and sometimes a
 # stringified int (measurement queries); accept either.
 UserId = int | str
 
-
-class RenphoAPIError(Exception):
-    """Raised when the Renpho API returns an error response."""
-
-    def __init__(self, context: str, code, msg: str):
-        self.context = context
-        self.code = code
-        self.msg = msg
-        super().__init__(f"{context} failed: code={code}, msg={msg}")
-
-
-def _check_response(result: dict, context: str = "API call") -> None:
-    """Raise :class:`RenphoAPIError` if the response indicates failure."""
-    code = result.get("code")
-    msg = result.get("msg", "")
-    if msg.lower() == "success" or code in SUCCESS_CODES:
-        return
-    raise RenphoAPIError(context, code, msg)
+__all__ = ["RenphoClient", "RenphoAPIError"]
 
 
 class RenphoClient:
