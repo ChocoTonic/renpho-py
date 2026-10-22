@@ -4,6 +4,13 @@ All notable changes to `renpho-py` are documented here. This project follows
 [Semantic Versioning](https://semver.org/): breaking changes to the public API
 bump the major version only.
 
+## [1.2.1] — 2026-10-21
+
+### Security
+- Require `certifi>=2026.10.19` so new installations use the updated CA trust
+  bundle that removes the compromised eMudhra certificate authorities.
+- Publish the already tested security dependency updates in the package lock.
+
 ## [1.2.0] — 2026-07-03
 
 ### Added
