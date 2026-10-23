@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from renpho.client import RenphoAPIError, RenphoClient, _check_response
-from renpho.constants import MEASUREMENT_TABLE_NAMES
+from renpho.constants import APP_VERSION, MEASUREMENT_TABLE_NAMES, PLATFORM
 from renpho.crypto import encrypt_request
 
 
@@ -54,6 +54,22 @@ class TestExtractRecords:
 
 
 class TestRenphoClient:
+    def test_login_includes_protocol_headers_without_authentication(self):
+        client = RenphoClient("test@example.com", "pass123")
+        encrypted = encrypt_request({"login": {"token": "test-token", "id": 123}})
+        result = {"code": 101, "msg": "success", "data": encrypted["encryptData"]}
+        with patch.object(client._transport, "post", return_value=result) as post:
+            client.login()
+
+        assert post.call_count == 1
+        headers = post.call_args.kwargs["headers"]
+        assert headers["appVersion"] == APP_VERSION
+        assert headers["platform"] == PLATFORM
+        assert "token" not in headers
+        assert "userId" not in headers
+        assert client.token == "test-token"
+        assert client.user_id == 123
+
     def test_init(self):
         client = RenphoClient("test@example.com", "pass123")
         assert client.email == "test@example.com"

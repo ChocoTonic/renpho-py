@@ -68,12 +68,12 @@ class RenphoClient:
         (used for concurrent shard probing, where sharing one session across
         threads would be unsafe). Defaults to the transport's own session.
         """
-        headers: dict[str, str] = {}
+        # Protocol headers are required even before login. Without them the
+        # server rejects the encrypted payload with code -114.
+        headers: dict[str, str] = {"appVersion": APP_VERSION, "platform": PLATFORM}
         if auth and self.token:
             headers["token"] = self.token
             headers["userId"] = str(self.user_id)
-            headers["appVersion"] = APP_VERSION
-            headers["platform"] = PLATFORM
 
         return self._transport.post(endpoint, body, headers=headers, session=session)
 
