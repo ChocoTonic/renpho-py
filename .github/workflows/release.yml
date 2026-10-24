@@ -1,3 +1,4 @@
+# Release checklist and naming convention: docs/releasing.md
 name: Release to PyPI
 
 on:
