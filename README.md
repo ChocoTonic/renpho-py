@@ -199,3 +199,8 @@ renpho-py/
 ├── tests/                # Unit tests
 └── .github/workflows/    # CI + PyPI release automation (trusted publishing)
 ```
+
+## Releases
+
+See [the release checklist](docs/releasing.md) for versioning, release titles,
+contributor credit, and publishing steps.
