@@ -23,7 +23,7 @@ jobs:
           pip install ".[dotenv]" ruff mypy
 
       - name: Ruff
-        run: ruff check renpho tests
+        run: ruff check renpho tests scripts
 
       - name: Mypy
         run: mypy
