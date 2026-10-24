@@ -17,7 +17,8 @@ def test_post_builds_url_passes_headers_and_returns_json():
     )
 
     fake_session.post.assert_called_once_with(
-        "https://example.test/some/endpoint", json={"a": 1}, headers={"h": "v"}
+        "https://example.test/some/endpoint", json={"a": 1}, headers={"h": "v"},
+        timeout=(10.0, 30.0),
     )
     fake_resp.raise_for_status.assert_called_once()
     assert result == {"ok": True}
@@ -31,3 +32,15 @@ def test_post_uses_own_session_by_default():
     transport.post("e", {})
 
     assert transport.session.post.called
+
+
+def test_custom_timeout_is_applied_and_timeout_propagates():
+    import pytest
+    import requests
+
+    transport = Transport(timeout=(2.0, 5.0))
+    transport.session = MagicMock()
+    transport.session.post.side_effect = requests.exceptions.ReadTimeout("timed out")
+    with pytest.raises(requests.exceptions.ReadTimeout):
+        transport.post("e", {})
+    assert transport.session.post.call_args.kwargs["timeout"] == (2.0, 5.0)

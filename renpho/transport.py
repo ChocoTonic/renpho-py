@@ -15,9 +15,16 @@ from .constants import API_BASE_URL
 class Transport:
     """Executes POST requests against the Renpho API."""
 
-    def __init__(self, base_url: str = API_BASE_URL, *, debug: bool = False):
+    def __init__(
+        self,
+        base_url: str = API_BASE_URL,
+        *,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ):
         self.base_url = base_url
         self.debug = debug
+        self.timeout = timeout
         self.session = requests.Session()
 
     def post(
@@ -38,7 +45,9 @@ class Transport:
         if self.debug:
             print(f"  POST {url}")
 
-        resp = (session or self.session).post(url, json=body, headers=headers or {})
+        resp = (session or self.session).post(
+            url, json=body, headers=headers or {}, timeout=self.timeout
+        )
 
         if self.debug:
             print(f"  Status: {resp.status_code}")

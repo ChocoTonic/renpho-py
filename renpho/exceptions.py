@@ -16,7 +16,7 @@ class RenphoAPIError(Exception):
 def check_response(result: dict, context: str = "API call") -> None:
     """Raise :class:`RenphoAPIError` if the response indicates failure."""
     code = result.get("code")
-    msg = result.get("msg", "")
+    msg = result.get("msg") or result.get("message") or ""
     if msg.lower() == "success" or code in SUCCESS_CODES:
         return
     raise RenphoAPIError(context, code, msg)

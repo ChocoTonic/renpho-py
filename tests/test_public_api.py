@@ -29,7 +29,7 @@ EXPECTED_EXPORTS = [
 
 # Public RenphoClient methods -> ordered parameter names (incl. keyword-only).
 EXPECTED_METHODS = {
-    "__init__": ["self", "email", "password", "debug"],
+    "__init__": ["self", "email", "password", "debug", "timeout"],
     "login": ["self"],
     "get_device_info": ["self"],
     "get_measurements": ["self", "table_name", "user_id", "total_count", "page_size"],
