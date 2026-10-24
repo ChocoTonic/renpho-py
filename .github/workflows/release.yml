@@ -82,7 +82,10 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if [ "$REUSE" != true ]; then
-            git add pyproject.toml uv.lock CHANGELOG.md
+            git add pyproject.toml CHANGELOG.md
+            if git ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
+              git add uv.lock
+            fi
             if ! git diff --cached --quiet; then
               git commit -m "chore(release): $TAG"
             fi

@@ -6,8 +6,8 @@ After a push to `main` passes the complete CI workflow, `release.yml` automatica
 
 1. Finds changes since the latest stable tag and collects merged PR links and
    contributor credit, including the authors of commits within each PR.
-2. Selects the next version, updates `pyproject.toml`, `uv.lock`, and the dated
-   changelog, and validates the versioned source with tests, Ruff, and mypy.
+2. Selects the next version, updates `pyproject.toml` and the dated
+   changelog (plus `uv.lock` if it is tracked), and validates the versioned source with tests, Ruff, and mypy.
 3. Commits the version changes, creates the tag, and prepares a draft release.
 4. Builds that exact commit, checks the packages, and publishes them to PyPI
    using the existing `release.yml` trusted publisher and `pypi` environment.
@@ -55,3 +55,7 @@ Do not delete or move published tags or attempt to overwrite a PyPI version.
 The automated workflow replaces the former manual GitHub-release trigger, avoiding
 a second publisher for the same version. A Git commit pin remains useful while a
 release is pending; update both a consumer's source pin and lockfile together.
+
+The library currently ignores `uv.lock`. Automation resolves it for validation
+but does not force an ignored file into version control. Consumers such as the
+TDEE tracker keep their own tracked lockfiles.
