@@ -17,10 +17,11 @@ ENDPOINTS = {
     "body_composition_scale_count": "RenphoHealth/scale/bodyCompositionScaleCount",
 }
 
-# Body composition scales shard measurements across 16 tables. Server-side
-# discovery only reports the table for the logged-in user, so the only way
-# to find data belonging to other linked accounts is to probe each suffix.
-MEASUREMENT_TABLE_NAMES = [f"measurements_info_{i:X}" for i in range(16)]
+# Renpho measurement tables use 24 decimal suffixes.
+MEASUREMENT_TABLE_SHARDS = 24
+MEASUREMENT_TABLE_NAMES = [
+    f"measurements_info_{i}" for i in range(MEASUREMENT_TABLE_SHARDS)
+]
 
 # Body weight scale device types
 BODY_WEIGHT_SCALES = [

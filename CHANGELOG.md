@@ -6,7 +6,13 @@ bump the major version only.
 
 ## [Unreleased]
 
+### Added
+- Optional expected-account validation, measurement profile listing and selection,
+  and strict discovery/collection to detect incomplete account history.
+
+
 ### Fixed
+- Discover 24 decimal measurement shards and deduplicate IDs within their table.
 - Bound HTTP requests with configurable connect/read timeouts. Reject repeated
   pagination pages and known-count truncation; preserve server error messages.
 - Send `appVersion` and `platform` protocol headers on login, preventing the

@@ -164,7 +164,7 @@ class TestGetAllMeasurementsCountZero:
 
 
 class TestDiscoverUserTables:
-    """discover_user_tables probes all 16 shards and returns those with data."""
+    """Discovery uses the 24 decimal shards and the deterministic fast path."""
 
     def _make_client(self):
         client = RenphoClient("a@b.com", "p")
@@ -179,35 +179,25 @@ class TestDiscoverUserTables:
             "data": encrypt_request(records)["encryptData"],
         }
 
-    def test_returns_only_tables_with_data(self):
-        from renpho.constants import MEASUREMENT_TABLE_NAMES
-
+    def test_computed_shard_short_circuits_the_sweep(self):
         client = self._make_client()
-        # One response per shard, in probe order. Give data to shards 2 and B (11),
-        # a decryptable-but-empty page to another, and "no data" to the rest.
-        responses = [{"code": 101, "msg": "success", "data": None}] * len(
-            MEASUREMENT_TABLE_NAMES
-        )
-        responses[2] = self._encrypted_records([{"id": 1, "weight": 70.0}])
-        responses[11] = self._encrypted_records([{"id": 2, "weight": 71.0}])
-        responses[7] = self._encrypted_records([])  # data present but empty -> skip
+        uid = 6000380382810832768  # real observed id -> shard 16
+        with patch.object(
+            client, "_shard_has_data", side_effect=lambda user, table: table.endswith("_16")
+        ) as probe:
+            assert client.discover_user_tables(uid) == ["measurements_info_16"]
+        probe.assert_called_once_with(uid, "measurements_info_16")
 
-        with patch.object(client, "_post", side_effect=responses) as mock_post:
-            found = client.discover_user_tables("999")
-
-        assert found == ["measurements_info_2", "measurements_info_B"]
-        # Every shard is probed exactly once.
-        assert mock_post.call_count == len(MEASUREMENT_TABLE_NAMES)
-
-    def test_returns_empty_when_nothing_found(self):
-        from renpho.constants import MEASUREMENT_TABLE_NAMES
-
+    def test_falls_back_to_remaining_shards(self):
         client = self._make_client()
-        responses = [{"code": 101, "msg": "success", "data": None}] * len(
-            MEASUREMENT_TABLE_NAMES
-        )
-        with patch.object(client, "_post", side_effect=responses):
-            assert client.discover_user_tables("999") == []
+        uid = 6000380382810832768
+        with patch.object(
+            client, "_shard_has_data", side_effect=lambda user, table: table.endswith("_3")
+        ) as probe:
+            assert client.discover_user_tables(uid) == ["measurements_info_3"]
+        assert probe.call_args_list[0].args == (uid, "measurements_info_16")
+        assert probe.call_count == len(MEASUREMENT_TABLE_NAMES)
+
 
 
 class TestGetAllMeasurementsMultiAccount:
@@ -252,8 +242,9 @@ class TestGetAllMeasurementsMultiAccount:
             result = client.get_all_measurements(extra_user_ids=["999"])
 
         mock_discover.assert_called_once_with("999", max_workers=1)
-        # id 2 is deduped away; newest-first by timeStamp.
-        assert [m["id"] for m in result] == [3, 2, 1]
+        # IDs are only unique within a table, so matching IDs in different
+        # shards remain distinct; results are newest-first.
+        assert [m["id"] for m in result] == [3, 2, 2, 1]
 
     def test_no_extra_ids_is_backward_compatible(self):
         client = self._make_client()
@@ -301,6 +292,7 @@ class TestGetAllMeasurementsMultiAccount:
         assert [m["id"] for m in result] == [1]
 
 
+
 class TestDiscoverUserTablesHardening:
     """Token guard, error isolation, caching, and concurrency."""
 
@@ -336,34 +328,31 @@ class TestDiscoverUserTablesHardening:
 
     def test_probe_failure_is_isolated(self):
         client = self._make_client()
-        responses = [self._no_data()] * len(MEASUREMENT_TABLE_NAMES)
-        responses[4] = requests.exceptions.ConnectionError("flaky")  # one shard dies
-        responses[9] = self._encrypted_records([{"id": 1, "weight": 70.0}])
-
+        responses = [
+            requests.exceptions.ConnectionError("flaky"),
+            self._encrypted_records([{"id": 1, "weight": 70.0}]),
+        ]
         with patch.object(client, "_post", side_effect=responses):
-            found = client.discover_user_tables("999")
-
-        # The dead probe is skipped, not fatal; the good shard is still found.
-        assert found == ["measurements_info_9"]
+            assert client._shard_has_data("999", "measurements_info_15") is True
 
     def test_results_are_cached_until_refresh_or_clear(self):
         client = self._make_client()
         n = len(MEASUREMENT_TABLE_NAMES)
-        with patch.object(client, "_post", return_value=self._no_data()) as mock_post:
+        with patch.object(client, "_shard_has_data", return_value=False) as probe:
             client.discover_user_tables("999")
             client.discover_user_tables("999")  # served from cache
-            assert mock_post.call_count == n
+            assert probe.call_count == n
 
             client.discover_user_tables("999", refresh=True)  # re-probe
-            assert mock_post.call_count == 2 * n
+            assert probe.call_count == 2 * n
 
             client.clear_table_cache()
             client.discover_user_tables("999")  # cache cleared -> re-probe
-            assert mock_post.call_count == 3 * n
+            assert probe.call_count == 3 * n
 
     def test_concurrent_matches_serial(self):
         client = self._make_client()
-        hits = {"measurements_info_3", "measurements_info_C"}
+        hits = {"measurements_info_3", "measurements_info_20"}
 
         with patch.object(
             client,
@@ -374,4 +363,5 @@ class TestDiscoverUserTablesHardening:
             concurrent = client.discover_user_tables("999", refresh=True, max_workers=4)
 
         # Same set, same canonical order, regardless of concurrency.
-        assert serial == concurrent == ["measurements_info_3", "measurements_info_C"]
+        assert serial == concurrent == ["measurements_info_3", "measurements_info_20"]
+
