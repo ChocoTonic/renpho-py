@@ -41,16 +41,24 @@ class RenphoClient:
             print(m["weight"], m.get("bodyfat"))
     """
 
-    def __init__(self, email: str, password: str, *, debug: bool = False):
+    def __init__(
+        self,
+        email: str,
+        password: str,
+        *,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ):
         self.email = email
         self.password = password
         self.debug = debug
         self.token: str | None = None
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
-        self._transport = Transport(debug=debug)
+        self._transport = Transport(debug=debug, timeout=timeout)
         # Cache of shard-discovery results, keyed by str(user_id).
         self._table_cache: dict[str, list[str]] = {}
+
 
     # ----- internal helpers -----
 
@@ -155,23 +163,32 @@ class RenphoClient:
         return data
 
     def get_measurements(
-        self, table_name: str, user_id, total_count: int, *, page_size: int = 50
+        self,
+        table_name: str,
+        user_id,
+        total_count: int | None = None,
+        *,
+        page_size: int = 50,
     ) -> list[dict]:
         """Fetch measurements from a specific scale table with pagination.
 
         Args:
             table_name: Dynamic table name from :meth:`get_device_info`.
             user_id: The user ID to query for.
-            total_count: Total records available (from device info).
+            total_count: Total records available (from device info). If omitted,
+                paginate until the server returns a short page.
             page_size: Records per page (default 50).
 
         Returns:
             List of measurement dicts.
         """
+        if page_size <= 0:
+            raise ValueError("page_size must be positive")
         all_measurements: list[dict] = []
+        seen_records: set[str] = set()
         page = 1
 
-        while len(all_measurements) < total_count:
+        while total_count is None or len(all_measurements) < total_count:
             request_data = {
                 "pageNum": page,
                 "pageSize": page_size,
@@ -187,6 +204,11 @@ class RenphoClient:
             _check_response(result, f"Measurements page {page}")
 
             if not result.get("data"):
+                if total_count is not None:
+                    raise RenphoAPIError(
+                        f"Measurements page {page}", None,
+                        "Pagination ended before the advertised record count was reached",
+                    )
                 break
 
             page_data = decrypt_response(result["data"])
@@ -198,13 +220,22 @@ class RenphoClient:
                     print(f"  Response type: {type(page_data)}")
 
             records = self._extract_records(page_data)
-            if records is None:
+            if not records:
+                if total_count is not None:
+                    raise RenphoAPIError(
+                        f"Measurements page {page}", None,
+                        "Pagination ended before the advertised record count was reached",
+                    )
                 break
 
+            self._check_page_progress(records, seen_records, f"Measurements page {page}")
             all_measurements.extend(records)
+            if total_count is None and len(records) < page_size:
+                break
             page += 1
 
         return all_measurements
+
 
     def get_body_composition_measurements(
         self, table_name: str, user_id, *, page_size: int = 50
@@ -225,7 +256,10 @@ class RenphoClient:
         Returns:
             List of measurement dicts.
         """
+        if page_size <= 0:
+            raise ValueError("page_size must be positive")
         all_measurements: list[dict] = []
+        seen_records: set[str] = set()
         page = 1
 
         while True:
@@ -260,12 +294,14 @@ class RenphoClient:
             if not records:
                 break
 
+            self._check_page_progress(records, seen_records, f"Measurements page {page}")
             all_measurements.extend(records)
             if len(records) < page_size:
                 break
             page += 1
 
         return all_measurements
+
 
     def _shard_has_data(
         self, user_id: UserId, table: str, *, session: requests.Session | None = None
@@ -468,3 +504,17 @@ class RenphoClient:
                 return [page_data]
 
         return None
+
+    @staticmethod
+    def _check_page_progress(
+        records: list[dict], seen_records: set[str], context: str
+    ) -> None:
+        """Stop pagination if the server returns only previously seen rows."""
+        fingerprints = {json.dumps(row, sort_keys=True) for row in records}
+        if fingerprints.issubset(seen_records):
+            raise RenphoAPIError(
+                context, None,
+                "Measurement pagination made no progress; the server repeated earlier records",
+            )
+        seen_records.update(fingerprints)
+

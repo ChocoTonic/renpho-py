@@ -7,6 +7,8 @@ bump the major version only.
 ## [Unreleased]
 
 ### Fixed
+- Bound HTTP requests with configurable connect/read timeouts. Reject repeated
+  pagination pages and known-count truncation; preserve server error messages.
 - Send `appVersion` and `platform` protocol headers on login, preventing the
   server's misleading `-114` decryption error before authentication.
 
