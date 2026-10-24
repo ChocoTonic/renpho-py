@@ -204,3 +204,7 @@ renpho-py/
 
 See [the release checklist](docs/releasing.md) for versioning, release titles,
 contributor credit, and publishing steps.
+
+See [measurement profiles](docs/measurement-profiles.md) for account validation,
+profile selection, and strict fetching. See [reliable fetching](docs/reliable-fetching.md)
+for request timeouts and pagination failure behavior.

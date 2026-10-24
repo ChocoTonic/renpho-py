@@ -30,7 +30,7 @@ EXPECTED_EXPORTS = [
 # Public RenphoClient methods -> ordered parameter names (incl. keyword-only).
 EXPECTED_METHODS = {
     "__init__": ["self", "email", "password", "debug", "timeout"],
-    "login": ["self"],
+    "login": ["self", "expected_user_id"],
     "get_device_info": ["self"],
     "get_measurements": ["self", "table_name", "user_id", "total_count", "page_size"],
     "get_body_composition_measurements": [
@@ -39,8 +39,10 @@ EXPECTED_METHODS = {
         "user_id",
         "page_size",
     ],
-    "discover_user_tables": ["self", "user_id", "refresh", "max_workers"],
-    "get_all_measurements": ["self", "extra_user_ids", "max_workers"],
+    "discover_user_tables": ["self", "user_id", "refresh", "max_workers", "strict"],
+    "get_all_measurements": ["self", "extra_user_ids", "max_workers", "strict", "profile_user_id"],
+    "measurement_table_for": ["user_id"],
+    "get_measurement_profiles": ["self"],
     "clear_table_cache": ["self"],
 }
 

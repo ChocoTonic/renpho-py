@@ -10,6 +10,7 @@ from .constants import (
     BODY_WEIGHT_SCALES,
     ENDPOINTS,
     MEASUREMENT_TABLE_NAMES,
+    MEASUREMENT_TABLE_SHARDS,
     PLATFORM,
 )
 from .crypto import (
@@ -87,10 +88,15 @@ class RenphoClient:
 
     # ----- public API -----
 
-    def login(self) -> dict:
+    def login(self, *, expected_user_id: UserId | None = None) -> dict:
         """Authenticate and store the session token.
 
         Returns the full decrypted login response (includes user profile).
+
+        Args:
+            expected_user_id: Require the authenticated principal to match the
+                known app account. This catches credentials for a different
+                account before an unrelated measurement timeline is fetched.
 
         Raises:
             RenphoAPIError: If the API rejects the credentials.
@@ -129,7 +135,20 @@ class RenphoClient:
         if not self.token:
             raise RenphoAPIError("Login", None, "No token in login response")
 
+        if expected_user_id is not None and str(self.user_id) != str(expected_user_id):
+            self.token = None
+            self.user_id = None
+            self.user_info = None
+            raise RenphoAPIError(
+                "Login account mismatch", None,
+                "Password login authenticated a different account from the "
+                "expected app account. Verify the configured email against "
+                "the account signed into the Renpho app and use credentials "
+                "belonging to that account.",
+            )
+
         return user_data
+
 
     def get_device_info(self) -> dict:
         """Get device info including scale table names and record counts.
@@ -304,33 +323,48 @@ class RenphoClient:
 
 
     def _shard_has_data(
-        self, user_id: UserId, table: str, *, session: requests.Session | None = None
+        self,
+        user_id: UserId,
+        table: str,
+        *,
+        session: requests.Session | None = None,
+        strict: bool = False,
     ) -> bool:
         """Return True if ``table`` holds at least one record for ``user_id``.
 
-        A single failed request (transport error) is treated as "no data" so
-        one flaky probe cannot abort discovery of the remaining shards.
+        By default failed endpoint requests are skipped. Strict probes raise
+        when failures leave the presence of data uncertain. Either endpoint
+        returning records is enough to establish that the shard has data.
         """
-        try:
-            encrypted_body = encrypt_request({
-                "pageNum": 1,
-                "pageSize": 1,
-                "userIds": [str(user_id)],
-                "tableName": table,
-            })
-            result = self._post(
-                ENDPOINTS["body_composition_measurements"],
-                encrypted_body,
-                session=session,
-            )
-            if not result.get("data"):
-                return False
-            page_data = decrypt_response(result["data"])
-            return bool(self._extract_records(page_data))
-        except requests.exceptions.RequestException as e:
-            if self.debug:
-                print(f"  Probe of {table} for user {user_id} failed: {e}")
-            return False
+        encrypted_body = encrypt_request({
+            "pageNum": 1,
+            "pageSize": 1,
+            "userIds": [str(user_id)],
+            "tableName": table,
+        })
+        failures: list[Exception] = []
+        for endpoint in ("body_composition_measurements", "measurements"):
+            try:
+                result = self._post(
+                    ENDPOINTS[endpoint], encrypted_body, session=session
+                )
+                _check_response(result, f"Shard discovery via {endpoint}")
+                if result.get("data") and self._extract_records(
+                    decrypt_response(result["data"])
+                ):
+                    return True
+            except (requests.exceptions.RequestException, RenphoAPIError) as error:
+                failures.append(error)
+                if self.debug:
+                    print(f"  Probe of {table} via {endpoint} failed: {error}")
+        if strict and failures:
+            raise RenphoAPIError(
+                "Shard discovery", None,
+                f"Could not establish whether {table} contains data; "
+                f"{len(failures)} endpoint request(s) failed",
+            ) from failures[0]
+        return False
+
 
     def discover_user_tables(
         self,
@@ -338,11 +372,12 @@ class RenphoClient:
         *,
         refresh: bool = False,
         max_workers: int = 1,
+        strict: bool = False,
     ) -> list[str]:
         """Probe all measurement tables for a given user_id and return the ones with data.
 
-        Body composition scales shard measurements across 16 tables
-        (``measurements_info_0`` through ``measurements_info_F``). The server
+        Body composition scales shard measurements across 24 decimal tables
+        (``measurements_info_0`` through ``measurements_info_23``). The server
         only reports the table for the logged-in user via ``device/count``,
         so for any other linked account this method probes each suffix.
 
@@ -357,6 +392,8 @@ class RenphoClient:
             user_id: The user ID to probe for.
             refresh: Ignore any cached result and probe again.
             max_workers: Number of concurrent probe workers (1 = serial).
+            strict: Re-probe and raise if a failed request could hide data.
+                Failed discoveries are never cached in this mode.
 
         Returns:
             List of table names (in canonical shard order) that contain at
@@ -366,36 +403,54 @@ class RenphoClient:
             self.login()
 
         key = str(user_id)
-        if not refresh and key in self._table_cache:
+        if not refresh and not strict and key in self._table_cache:
             return list(self._table_cache[key])
 
+        def has_data(table: str) -> bool:
+            if strict:
+                return self._shard_has_data(user_id, table, strict=True)
+            return self._shard_has_data(user_id, table)
+
+        candidates = list(MEASUREMENT_TABLE_NAMES)
+        expected = self.measurement_table_for(user_id)
+        if expected in candidates:
+            candidates.remove(expected)
+            if has_data(expected):
+                found = [expected]
+                self._table_cache[key] = found
+                return list(found)
+
         if max_workers and max_workers > 1:
-            found = self._discover_concurrent(user_id, max_workers)
+            found = self._discover_concurrent(
+                user_id, max_workers, candidates, strict=strict
+            )
         else:
-            found = [
-                table
-                for table in MEASUREMENT_TABLE_NAMES
-                if self._shard_has_data(user_id, table)
-            ]
+            found = [t for t in candidates if has_data(t)]
 
         self._table_cache[key] = found
         return list(found)
 
-    def _discover_concurrent(self, user_id: UserId, max_workers: int) -> list[str]:
+
+    def _discover_concurrent(
+        self, user_id: UserId, max_workers: int, tables: list[str], *, strict: bool = False
+    ) -> list[str]:
         """Probe all shards concurrently, one dedicated session per worker."""
 
         def probe(table: str) -> tuple[str, bool]:
             session = requests.Session()
             try:
-                return table, self._shard_has_data(user_id, table, session=session)
+                return table, self._shard_has_data(
+                    user_id, table, session=session, strict=strict
+                )
             finally:
                 session.close()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            has_data = dict(executor.map(probe, MEASUREMENT_TABLE_NAMES))
+            has_data = dict(executor.map(probe, tables))
 
         # Preserve canonical shard order regardless of completion order.
-        return [table for table in MEASUREMENT_TABLE_NAMES if has_data.get(table)]
+        return [table for table in tables if has_data.get(table)]
+
 
     def clear_table_cache(self) -> None:
         """Clear cached shard-discovery results (see :meth:`discover_user_tables`)."""
@@ -406,6 +461,8 @@ class RenphoClient:
         extra_user_ids: list[str] | None = None,
         *,
         max_workers: int = 1,
+        strict: bool = False,
+        profile_user_id: str | None = None,
     ) -> list[dict]:
         """High-level helper: fetch device info then pull all measurements.
 
@@ -427,6 +484,11 @@ class RenphoClient:
                 so it never discards the accounts already fetched.
             max_workers: Concurrency for the per-extra-account shard discovery
                 (passed to :meth:`discover_user_tables`; 1 = serial).
+            profile_user_id: Fetch only this measurement profile, ignoring extra
+                accounts. Verify bUserId (or legacy userId) on every record.
+            strict: Require every configured extra account to return records.
+                Raise on failed probes, fetches, or an empty extra account
+                rather than returning a silently incomplete timeline.
 
         Returns:
             List of measurement dicts sorted by timestamp (newest first),
@@ -438,7 +500,48 @@ class RenphoClient:
         device_info = self.get_device_info()
         scales = device_info.get("scale", [])
 
+        if profile_user_id is not None:
+            selected = str(profile_user_id)
+            profile_tables = {
+                scale["tableName"] for scale in scales
+                if scale.get("tableName")
+                and selected in {str(uid) for uid in scale.get("userIds", [])}
+            }
+            if not profile_tables:
+                profile_tables = set(self.discover_user_tables(
+                    selected, max_workers=max_workers, strict=strict
+                ))
+            records = {}
+            for table in sorted(profile_tables):
+                rows = self.get_body_composition_measurements(table, selected)
+                if not rows:
+                    rows = self.get_measurements(table, selected)
+                for row in rows:
+                    owner = row.get("bUserId") or row.get("userId")
+                    if str(owner) == selected:
+                        key = (table, row.get("id", (row.get("timeStamp"), row.get("weight"))))
+                        records[key] = row
+            if strict and not records:
+                raise RenphoAPIError(
+                    "Profile measurements", None,
+                    f"Selected measurement profile {selected} returned no identifiable records.",
+                )
+            return sorted(
+                records.values(), key=lambda row: row.get("timeStamp", 0) or 0, reverse=True
+            )
+
         all_measurements: list[dict] = []
+        seen: set[tuple[str, object]] = set()
+
+        def collect(table: str, records: list[dict]) -> None:
+            for record in records:
+                record_id = record.get("id")
+                key = (table, record_id)
+                if record_id is not None and key in seen:
+                    continue
+                if record_id is not None:
+                    seen.add(key)
+                all_measurements.append(record)
         for scale in scales:
             table_name = scale.get("tableName")
             count = scale.get("count", 0)
@@ -457,37 +560,50 @@ class RenphoClient:
             if not measurements and count > 0:
                 measurements = self.get_measurements(table_name, uid, count)
 
-            all_measurements.extend(measurements)
+            collect(table_name, measurements)
 
         for extra_uid in extra_user_ids or []:
             try:
-                for table in self.discover_user_tables(
-                    extra_uid, max_workers=max_workers
-                ):
-                    all_measurements.extend(
-                        self.get_body_composition_measurements(table, extra_uid)
+                discovery_options = {"strict": True} if strict else {}
+                tables = self.discover_user_tables(
+                    extra_uid, max_workers=max_workers, **discovery_options
+                )
+                if strict and not tables:
+                    raise RenphoAPIError(
+                        "Extra-account measurements", None,
+                        "A configured extra account returned no measurements across "
+                        "the 24 known shards. Verify its current account ID and "
+                        "cloud sync in the Renpho app; empty responses do not "
+                        "confirm that the account has no weigh-ins.",
                     )
-            except requests.exceptions.RequestException as e:
+                extra_count = 0
+                for table in tables:
+                    measurements = self.get_body_composition_measurements(
+                        table, extra_uid
+                    )
+                    if not measurements:
+                        measurements = self.get_measurements(table, extra_uid)
+                    extra_count += len(measurements)
+                    collect(table, measurements)
+                if strict and not extra_count:
+                    raise RenphoAPIError(
+                        "Extra-account measurements", None,
+                        "A configured extra account became empty after discovery; "
+                        "retry the fetch before accepting a partial timeline.",
+                    )
+            except (requests.exceptions.RequestException, RenphoAPIError) as e:
+                if strict:
+                    raise
                 if self.debug:
                     print(f"  Failed to fetch extra user {extra_uid}: {e}")
                 continue
 
-        # Dedupe by record id (each measurement is a unique server-side row).
-        seen_ids: set = set()
-        unique: list[dict] = []
-        for m in all_measurements:
-            rid = m.get("id")
-            if rid is not None and rid in seen_ids:
-                continue
-            if rid is not None:
-                seen_ids.add(rid)
-            unique.append(m)
-
-        unique.sort(
+        all_measurements.sort(
             key=lambda m: m.get("timeStamp", 0) or 0,
             reverse=True,
         )
-        return unique
+        return all_measurements
+
 
     @staticmethod
     def _extract_records(page_data) -> list[dict] | None:
@@ -517,4 +633,26 @@ class RenphoClient:
                 "Measurement pagination made no progress; the server repeated earlier records",
             )
         seen_records.update(fingerprints)
+
+    @staticmethod
+    def measurement_table_for(user_id: UserId) -> str | None:
+        """Return the normal shard for ``user_id`` (``user_id % 24``)."""
+        try:
+            return f"measurements_info_{int(user_id) % MEASUREMENT_TABLE_SHARDS}"
+        except (TypeError, ValueError):
+            return None
+
+    def get_measurement_profiles(self) -> list[dict]:
+        """List selectable measurement profiles without downloading history."""
+        if not self.token:
+            self.login()
+        ids = {str(self.user_id)}
+        for scale in self.get_device_info().get("scale", []):
+            ids.update(str(uid) for uid in scale.get("userIds", []) if uid)
+        return [
+            {"user_id": uid, "is_account_owner": uid == str(self.user_id)}
+            for uid in sorted(ids)
+        ]
+
+
 
