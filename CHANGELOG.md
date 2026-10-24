@@ -4,6 +4,12 @@ All notable changes to `renpho-py` are documented here. This project follows
 [Semantic Versioning](https://semver.org/): breaking changes to the public API
 bump the major version only.
 
+## [Unreleased]
+
+### Fixed
+- Send `appVersion` and `platform` protocol headers on login, preventing the
+  server's misleading `-114` decryption error before authentication.
+
 ## [1.2.1] — 2026-10-21
 
 ### Security
