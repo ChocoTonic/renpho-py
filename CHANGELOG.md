@@ -6,6 +6,8 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-24
+
 ### Added
 - Optional expected-account validation, measurement profile listing and selection,
   and strict discovery/collection to detect incomplete account history.
@@ -17,6 +19,17 @@ bump the major version only.
   pagination pages and known-count truncation; preserve server error messages.
 - Send `appVersion` and `platform` protocol headers on login, preventing the
   server's misleading `-114` decryption error before authentication.
+
+## Changes in 1.3.0
+
+* Fix Renpho login decryption failure and verify request headers ([#5](https://github.com/ChocoTonic/renpho-py/pull/5)) by @ChocoTonic, @aarogozin
+* Document consistent release naming and publishing steps ([#6](https://github.com/ChocoTonic/renpho-py/pull/6)) by @ChocoTonic
+* Bound measurement requests and reject stalled or incomplete pagination ([#7](https://github.com/ChocoTonic/renpho-py/pull/7)) by @ChocoTonic
+* Add validated account login and strict measurement profile collection ([#8](https://github.com/ChocoTonic/renpho-py/pull/8)) by @ChocoTonic
+* Automatically publish releases after validated main changes ([#9](https://github.com/ChocoTonic/renpho-py/pull/9)) by @ChocoTonic
+* Respect the ignored lockfile during automatic releases ([#10](https://github.com/ChocoTonic/renpho-py/pull/10)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.2.1...b576cea1d97abc23f0efee31a671a157af755bf2)
 
 ## [1.2.1] — 2026-10-21
 
