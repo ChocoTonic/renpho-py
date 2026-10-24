@@ -1,50 +1,130 @@
-# Release checklist and naming convention: docs/releasing.md
+# Naming, version selection, retries: docs/releasing.md
 name: Release to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: automatic-release
+  cancel-in-progress: false
 
 permissions:
-  id-token: write  # Required for trusted publishing
+  contents: read
 
 jobs:
-  test:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Require successful CI for manual recovery
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[dotenv]"
-          pip install pytest
+          python - <<'PY'
+          import json, os, subprocess
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          repo = os.environ['GITHUB_REPOSITORY']
+          import re
+          title = subprocess.check_output(['git', 'log', '-1', '--format=%s'], text=True).strip()
+          changed = set(subprocess.check_output(['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'], text=True).splitlines())
+          if re.fullmatch(r'chore\(release\): v\d+\.\d+\.\d+', title) and changed <= {'pyproject.toml', 'uv.lock', 'CHANGELOG.md'}:
+              sha = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
+          runs = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/workflows/ci.yml/runs?head_sha={sha}&event=push&per_page=100'], text=True))['workflow_runs']
+          if not any(r['conclusion'] == 'success' for r in runs):
+              raise SystemExit('Source commit must pass push CI before release')
+          PY
+      - name: Plan version and release notes
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/prepare_release.py
+      - name: Validate release version
+        if: steps.plan.outputs.ready == 'true'
+        run: |
+          pip install uv
+          uv lock
+          uv sync --locked
+          uv run pytest tests -q
+          uv run ruff check renpho tests scripts
+          uv run mypy
+      - name: Commit version and create draft release
+        if: steps.plan.outputs.ready == 'true'
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          REUSE: ${{ steps.plan.outputs.reuse }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ "$REUSE" != true ]; then
+            git add pyproject.toml uv.lock CHANGELOG.md
+            if ! git diff --cached --quiet; then
+              git commit -m "chore(release): $TAG"
+            fi
+            git push origin HEAD:main
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              git tag "$TAG"
+            fi
+            git push origin "$TAG"
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              gh release create "$TAG" --verify-tag --draft --title "$TAG — renpho-py" --notes-file release-notes.md
+            fi
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests
-        run: pytest tests/ -v
-
-  build-and-publish:
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
-    needs: test
     environment: pypi
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-
-      - name: Install build tools
-        run: pip install build
-
-      - name: Build package
-        run: python -m build
-
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build exact release commit
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+      - name: Publish GitHub release and attach packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --draft=false --latest
