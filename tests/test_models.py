@@ -1,6 +1,7 @@
 """Tests for renpho.models.Measurement and timestamp parsing."""
 
 import datetime
+
 from renpho.models import Measurement, parse_timestamp
 
 
@@ -40,13 +41,16 @@ def test_from_dict_defaults_missing_to_none():
 
 
 def test_parse_timestamp_resolves_server_offset_mismatch():
-    """Verify that a server-shifted timeStamp (+8 hours) is ignored in favor of localCreatedAt + timeZone."""
+    """Verify that a server-shifted timeStamp (+8 hours) is ignored in favor of
+    localCreatedAt + timeZone.
+    """
     # User weighs in at 10:00:00 AM EDT (UTC-4)
     # Expected UTC: 14:00:00 UTC -> 1794060000
-    # Skewed Renpho server timeStamp (e.g. +8 hours ahead in China Standard Time): 1794060000 + 28800 = 1794088800
+    # Skewed Renpho server timeStamp (e.g. +8 hours ahead in China Standard Time)
     local_time_str = "2026-11-06 10:00:00"
     tz_str = "-04:00"
-    expected_utc = datetime.datetime(2026, 11, 6, 10, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-4)))
+    tz = datetime.timezone(datetime.timedelta(hours=-4))
+    expected_utc = datetime.datetime(2026, 11, 6, 10, 0, 0, tzinfo=tz)
     true_epoch = int(expected_utc.timestamp())
 
     eight_hours_skewed_epoch = true_epoch + (8 * 3600)

@@ -7,8 +7,8 @@ original payload is always preserved on :attr:`raw`, so nothing is lost even
 for keys this model doesn't name.
 """
 
-from dataclasses import dataclass, field
 import datetime
+from dataclasses import dataclass, field
 
 
 def parse_timestamp(data: dict) -> int | None:
