@@ -15,8 +15,9 @@ def parse_timestamp(data: dict) -> int | None:
     """Extract Unix timestamp in seconds from a measurement dictionary.
 
     Prioritizes ``localCreatedAt`` + ``timeZone`` because Renpho's raw ``timeStamp``
-    integer is frequently offset or misaligned relative to true local measurement time.
-    Normalizes millisecond timestamps to seconds, and falls back to ``createdAt`` (UTC).
+    integer is frequently offset or misaligned (often by +8 hours) relative to the
+    true local measurement time. Normalizes millisecond timestamps to seconds,
+    and falls back to ``createdAt`` (UTC).
     """
     local_created = data.get("localCreatedAt")
     tz_str = data.get("timeZone")
@@ -26,9 +27,10 @@ def parse_timestamp(data: dict) -> int | None:
                 dt = datetime.datetime.strptime(str(local_created), fmt)
                 if tz_str:
                     parts = str(tz_str).strip().split(":")
+                    is_neg = parts[0].strip().startswith("-")
                     hours = int(parts[0])
                     mins = int(parts[1]) if len(parts) > 1 else 0
-                    if hours < 0:
+                    if is_neg and mins > 0:
                         mins = -mins
                     tz = datetime.timezone(datetime.timedelta(hours=hours, minutes=mins))
                     dt = dt.replace(tzinfo=tz)
