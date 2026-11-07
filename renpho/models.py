@@ -8,6 +8,58 @@ for keys this model doesn't name.
 """
 
 from dataclasses import dataclass, field
+import datetime
+
+
+def parse_timestamp(data: dict) -> int | None:
+    """Extract Unix timestamp in seconds from a measurement dictionary.
+
+    Prioritizes ``localCreatedAt`` + ``timeZone`` because Renpho's raw ``timeStamp``
+    integer is frequently offset or misaligned relative to true local measurement time.
+    Normalizes millisecond timestamps to seconds, and falls back to ``createdAt`` (UTC).
+    """
+    local_created = data.get("localCreatedAt")
+    tz_str = data.get("timeZone")
+    if local_created:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.datetime.strptime(str(local_created), fmt)
+                if tz_str:
+                    parts = str(tz_str).strip().split(":")
+                    hours = int(parts[0])
+                    mins = int(parts[1]) if len(parts) > 1 else 0
+                    if hours < 0:
+                        mins = -mins
+                    tz = datetime.timezone(datetime.timedelta(hours=hours, minutes=mins))
+                    dt = dt.replace(tzinfo=tz)
+                else:
+                    dt = dt.astimezone()
+                return int(dt.timestamp())
+            except (ValueError, IndexError):
+                pass
+
+    ts = data.get("timeStamp") or data.get("time_stamp")
+    if ts is not None:
+        try:
+            ts_int = int(float(ts))
+            if ts_int > 1e12:
+                ts_int //= 1000
+            return ts_int
+        except (ValueError, TypeError):
+            pass
+
+    created_at = data.get("createdAt")
+    if created_at:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.datetime.strptime(str(created_at), fmt).replace(
+                    tzinfo=datetime.timezone.utc
+                )
+                return int(dt.timestamp())
+            except ValueError:
+                pass
+
+    return None
 
 
 @dataclass
@@ -16,6 +68,8 @@ class Measurement:
 
     id: int | str | None = None
     timestamp: int | None = None
+    local_created_at: str | None = None
+    time_zone: str | None = None
     weight: float | None = None
     bmi: float | None = None
     bodyfat: float | None = None
@@ -35,9 +89,18 @@ class Measurement:
     @classmethod
     def from_dict(cls, data: dict) -> "Measurement":
         """Build a :class:`Measurement` from a raw API measurement dict."""
+        ts = parse_timestamp(data)
+        if ts is None and data.get("timeStamp") is not None:
+            try:
+                ts = int(data["timeStamp"])
+            except (ValueError, TypeError):
+                pass
+
         return cls(
             id=data.get("id"),
-            timestamp=data.get("timeStamp"),
+            timestamp=ts,
+            local_created_at=data.get("localCreatedAt"),
+            time_zone=data.get("timeZone"),
             weight=data.get("weight"),
             bmi=data.get("bmi"),
             bodyfat=data.get("bodyfat"),
@@ -54,3 +117,10 @@ class Measurement:
             heart_rate=data.get("heartRate"),
             raw=data,
         )
+
+    @property
+    def datetime(self) -> datetime.datetime | None:
+        """Return the measurement timestamp as a UTC datetime object."""
+        if self.timestamp is not None:
+            return datetime.datetime.fromtimestamp(self.timestamp, tz=datetime.timezone.utc)
+        return None
