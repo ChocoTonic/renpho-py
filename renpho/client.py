@@ -1,6 +1,7 @@
 """Renpho API client for fetching scale measurements."""
 
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -28,6 +29,28 @@ from .transport import Transport
 UserId = int | str
 
 __all__ = ["RenphoClient", "RenphoAPIError"]
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_device_info(data: object) -> dict:
+    """Validate device collections without changing other metadata fields."""
+    if not isinstance(data, dict):
+        raise ValueError(f"expected an object, got {type(data).__name__}")
+    scales = data.get("scale", [])
+    if not isinstance(scales, list):
+        raise ValueError(f"expected scale list, got {type(scales).__name__}")
+    normalized = []
+    for scale in scales:
+        if not isinstance(scale, dict):
+            raise ValueError(f"expected scale object, got {type(scale).__name__}")
+        user_ids = scale.get("userIds", [])
+        if type(user_ids) in (int, str):
+            user_ids = [user_ids]
+        if not isinstance(user_ids, list) or any(type(uid) not in (int, str) for uid in user_ids):
+            raise ValueError("expected userIds to be an ID or a list of IDs")
+        normalized.append({**scale, "userIds": user_ids})
+    return {**data, "scale": normalized}
 
 
 class RenphoClient:
@@ -153,6 +176,9 @@ class RenphoClient:
     def get_device_info(self) -> dict:
         """Get device info including scale table names and record counts.
 
+        Scalar integer/string ``userIds`` values are normalized to lists. A
+        malformed collection is read once more before raising RenphoAPIError.
+
         Returns:
             Decrypted device info dict (contains ``scale`` list among others).
 
@@ -163,7 +189,6 @@ class RenphoClient:
             encrypted_body = body_fn()
             try:
                 result = self._post(ENDPOINTS["device_info"], encrypted_body)
-                break
             except requests.exceptions.HTTPError as e:
                 if attempt == 0:
                     if self.debug:
@@ -173,13 +198,23 @@ class RenphoClient:
                     continue
                 raise
 
-        _check_response(result, "GetDeviceInfo")
-        data = decrypt_response(result["data"])
+            _check_response(result, "GetDeviceInfo")
+            data = decrypt_response(result["data"])
+            try:
+                data = _normalize_device_info(data)
+            except ValueError as error:
+                if attempt:
+                    raise RenphoAPIError(
+                        "GetDeviceInfo", None, f"Malformed device metadata: {error}"
+                    ) from error
+                logger.warning("Malformed Renpho device metadata (%s); retrying once", error)
+                continue
 
-        if self.debug:
-            print(f"  Device info: {json.dumps(data, indent=2)[:500]}")
+            if self.debug:
+                print(f"  Device info: {json.dumps(data, indent=2)[:500]}")
 
-        return data
+            return data
+        raise AssertionError("Device metadata retry exhausted")
 
     def get_measurements(
         self,
