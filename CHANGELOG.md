@@ -6,9 +6,17 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-11-09
+
 ### Fixed
 - Normalize scalar user IDs in device metadata and retry malformed collections
   once before raising a contextual API error instead of an iteration error.
+
+## Changes in 1.3.1
+
+* Handle scalar user IDs and malformed device metadata ([#12](https://github.com/ChocoTonic/renpho-py/pull/12)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.0...d1cb45dba38c13efd07d38e90ef1a8475db5cf85)
 
 ## [1.3.0] — 2026-10-24
 
