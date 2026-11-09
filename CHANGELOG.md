@@ -6,6 +6,10 @@ bump the major version only.
 
 ## [Unreleased]
 
+### Fixed
+- Normalize scalar user IDs in device metadata and retry malformed collections
+  once before raising a contextual API error instead of an iteration error.
+
 ## [1.3.0] — 2026-10-24
 
 ### Added
