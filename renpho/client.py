@@ -3,6 +3,7 @@
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import requests
 
@@ -20,15 +21,22 @@ from .crypto import (
     encrypt_empty_object,
     encrypt_request,
 )
-from .exceptions import RenphoAPIError
+from .exceptions import RenphoAPIError, RenphoSessionError
 from .exceptions import check_response as _check_response
+from .session import (
+    parse_session,
+    parse_token_time,
+    read_session_file,
+    token_expiry,
+    write_session_file,
+)
 from .transport import Transport
 
 # A Renpho user ID is sometimes an int (login response) and sometimes a
 # stringified int (measurement queries); accept either.
 UserId = int | str
 
-__all__ = ["RenphoClient", "RenphoAPIError"]
+__all__ = ["RenphoClient", "RenphoAPIError", "RenphoSessionError"]
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +87,100 @@ class RenphoClient:
         self.token: str | None = None
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
+        self._session_only = False
+        self._session_file: Path | None = None
+        self._session_expires_at: float | None = None
         self._transport = Transport(debug=debug, timeout=timeout)
         # Cache of shard-discovery results, keyed by str(user_id).
         self._table_cache: dict[str, list[str]] = {}
 
+
+    # ----- existing-session construction -----
+
+    @classmethod
+    def from_session(
+        cls, data: dict, *, expected_user_id: UserId | None = None,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ) -> "RenphoClient":
+        """Import an existing session without allowing password login.
+
+        ``data`` contains ``token`` and ``user_id``, and optionally ``email``.
+        The server validates the token on the first request. This does not
+        create restricted read-only credentials or a second server session.
+        """
+        imported = parse_session(data, expected_user_id)
+        client = cls(imported.email, "", debug=debug, timeout=timeout)
+        client._session_only = True
+        client.token, client.user_id = imported.token, imported.user_id
+        client._session_expires_at = imported.expires_at
+        return client
+
+    @classmethod
+    def from_session_file(
+        cls, path: str | Path, *, expected_user_id: UserId | None = None,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ) -> "RenphoClient":
+        """Read a local session JSON file; never fall back to password login."""
+        data = read_session_file(Path(path).expanduser())
+        client = cls.from_session(
+            data, expected_user_id=expected_user_id, debug=debug, timeout=timeout,
+        )
+        client._session_file = Path(path).expanduser()
+        return client
+
+    @property
+    def token_expires_at(self) -> float | None:
+        """Expiry in Unix seconds; JWT claims are decoded, not verified offline."""
+        if self._session_expires_at is not None:
+            return self._session_expires_at
+        return token_expiry(self.token)
+
+    def save_session(self, path: str | Path | None = None) -> Path:
+        """Atomically save the current token with owner-only file permissions."""
+        target = Path(path).expanduser() if path is not None else self._session_file
+        if target is None:
+            raise ValueError("no session file configured")
+        if not self.token or self.user_id is None:
+            raise RenphoSessionError("SaveSession", None, "No current session to save")
+        data = {"email": self.email, "user_id": self.user_id, "token": self.token,
+                "expires_at": self.token_expires_at}
+        write_session_file(target, data)
+        self._session_file = target
+        return target
+
+    def refresh_session(self) -> dict:
+        """Query the app's token-time endpoint and adopt any replacement token.
+
+        RENPHO decides when to issue a replacement; this cannot revive a revoked
+        session. No password login is attempted. A file-imported session is saved
+        automatically. The return value contains timestamps and a replacement
+        flag, never the token. This explicit operation may rotate a shared token.
+        """
+        if not self.token or self.user_id is None:
+            raise RenphoSessionError("RefreshSession", None, "No current session to refresh")
+        result = self._post(ENDPOINTS["token_time"], encrypt_empty_object())
+        _check_response(result, "RefreshSession")
+        data = decrypt_response(result["data"]) if result.get("data") else None
+        renewal = parse_token_time(data, self.user_id)
+        token = renewal.token
+        replaced = bool(token and token.strip() and token != self.token)
+        if replaced:
+            self.token = token
+            self._session_expires_at = None
+        if renewal.expires_at is not None:
+            self._session_expires_at = renewal.expires_at
+        if self._session_file is not None:
+            try:
+                self.save_session()
+            except OSError:
+                raise RenphoSessionError(
+                    "RefreshSession", None,
+                    "Session updated in memory but could not save it; retry save_session().",
+                ) from None
+        return {"issued_at": renewal.issued_at, "expires_at": self.token_expires_at,
+                "token_replaced": replaced}
 
     # ----- internal helpers -----
 
@@ -100,6 +198,8 @@ class RenphoClient:
         (used for concurrent shard probing, where sharing one session across
         threads would be unsafe). Defaults to the transport's own session.
         """
+        if self._session_only and (endpoint == ENDPOINTS["login"] or not self.token):
+            raise RenphoSessionError("Session", None, "Imported-session mode forbids login")
         # Protocol headers are required even before login. Without them the
         # server rejects the encrypted payload with code -114.
         headers: dict[str, str] = {"appVersion": APP_VERSION, "platform": PLATFORM}
@@ -107,7 +207,22 @@ class RenphoClient:
             headers["token"] = self.token
             headers["userId"] = str(self.user_id)
 
-        return self._transport.post(endpoint, body, headers=headers, session=session)
+        try:
+            result = self._transport.post(endpoint, body, headers=headers, session=session)
+        except requests.HTTPError as error:
+            if (self._session_only and error.response is not None
+                    and error.response.status_code in (401, 403)):
+                raise RenphoSessionError(
+                    "Session", error.response.status_code,
+                    "Imported session rejected; obtain a current session. Login was not attempted.",
+                ) from None
+            raise
+        if self._session_only and str(result.get("code")) in ("401", "403"):
+            raise RenphoSessionError(
+                "Session", result.get("code"),
+                "Imported session rejected; obtain a current session. Login was not attempted.",
+            )
+        return result
 
     # ----- public API -----
 
@@ -125,6 +240,8 @@ class RenphoClient:
             RenphoAPIError: If the API rejects the credentials.
             requests.HTTPError: On transport-level failures.
         """
+        if self._session_only:
+            raise RenphoSessionError("Login", None, "Imported-session mode forbids login")
         login_payload = {
             "questionnaire": {},
             "login": {
@@ -152,6 +269,7 @@ class RenphoClient:
 
         login_info = user_data.get("login", {})
         self.token = login_info.get("token")
+        self._session_expires_at = None
         self.user_id = login_info.get("id")
         self.user_info = login_info
 
@@ -388,6 +506,8 @@ class RenphoClient:
                     decrypt_response(result["data"])
                 ):
                     return True
+            except RenphoSessionError:
+                raise
             except (requests.exceptions.RequestException, RenphoAPIError) as error:
                 failures.append(error)
                 if self.debug:
@@ -626,6 +746,8 @@ class RenphoClient:
                         "A configured extra account became empty after discovery; "
                         "retry the fetch before accepting a partial timeline.",
                     )
+            except RenphoSessionError:
+                raise
             except (requests.exceptions.RequestException, RenphoAPIError) as e:
                 if strict:
                     raise

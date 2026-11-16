@@ -21,6 +21,7 @@ EXPECTED_EXPORTS = [
     "Measurement",
     "RenphoAPIError",
     "RenphoClient",
+    "RenphoSessionError",
     "format_measurement",
     "format_timestamp",
     "save_csv",
@@ -30,6 +31,10 @@ EXPECTED_EXPORTS = [
 # Public RenphoClient methods -> ordered parameter names (incl. keyword-only).
 EXPECTED_METHODS = {
     "__init__": ["self", "email", "password", "debug", "timeout"],
+    "from_session": ["data", "expected_user_id", "debug", "timeout"],
+    "from_session_file": ["path", "expected_user_id", "debug", "timeout"],
+    "refresh_session": ["self"],
+    "save_session": ["self", "path"],
     "login": ["self", "expected_user_id"],
     "get_device_info": ["self"],
     "get_measurements": ["self", "table_name", "user_id", "total_count", "page_size"],
@@ -64,7 +69,7 @@ def test_no_unexpected_public_methods():
     # Any *new* public (non-underscore) method is a contract addition; force it
     # to be declared above rather than appearing silently.
     public = {n for n in dir(RenphoClient) if not n.startswith("_")}
-    expected_public = set(EXPECTED_METHODS) - {"__init__"}
+    expected_public = (set(EXPECTED_METHODS) - {"__init__"}) | {"token_expires_at"}
     assert public == expected_public, f"unexpected public surface: {public ^ expected_public}"
 
 

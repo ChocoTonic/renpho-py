@@ -208,3 +208,12 @@ contributor credit, and publishing steps.
 See [measurement profiles](docs/measurement-profiles.md) for account validation,
 profile selection, and strict fetching. See [reliable fetching](docs/reliable-fetching.md)
 for request timeouts and pagination failure behavior.
+
+### Import an existing phone session
+
+Use `RenphoClient.from_session_file()` for reads using an existing RENPHO token,
+without allowing password login or automatic relogin. This is session reuse,
+not a separate read-only credential. `refresh_session()` performs the app's
+renewal check and saves replacement tokens; `token_expires_at` reports expiry.
+See [session import](docs/session-import.md)
+for the file format, failure behavior and current limitations.
