@@ -167,3 +167,59 @@ missing source/category request option, a useful hypothesis. It does not prove
 that the friend API never supports that store. Inspect the runtime bundle's
 request builders or capture the relevant read-screen requests before choosing
 new endpoints or discriminator values. No MITM capture was performed.
+
+## Follow-up: account IDs and the actual friend-screen requests
+
+The existing `extra_user_ids` option combines records that the authenticated
+account can already read. It does not merge backend identities, link OAuth and
+password accounts, or grant friend access. A sync-account request for the known
+owner ID and its advertised measurement table returned no rows through either
+direct measurement endpoint. The same owner ID returned recent body-composition
+records when authenticated as the owner. This comparison does not establish a
+duplicate OAuth identity as the cause.
+
+A new owner-profile weigh-in taken after friendship acceptance was confirmed in
+the owner's cloud records. The subsequent friend read remained empty, so a
+simple exclusion of pre-friendship history does not explain this case.
+
+Static inspection of the server-provided `RenphoHealthFriendRN` panel version
+2.0.8 recovered two additional read contracts:
+
+- `RenphoHealth/app/friend/measure/history` receives `rhFriendId`, `startTime`
+  and `endTime`, with local-day boundaries expressed as Unix seconds.
+- `RenphoHealth/app/friend/measure/trend` receives `rhFriendId`, `timeZone`,
+  `param`, `sourceDataType`, `timeType`, `pageNum` and `pageSize: 1000`.
+  Its custom-date branch sends both bounds and an empty `timeType`.
+
+Replaying these builders as the sync account returned success code 101 and no
+records, both for a recent 30-day range and for the local calendar day containing
+the new weigh-in. The normal Weight/Week request also returned an empty list.
+In that panel, `sourceDataType` selects `AM`, `PM` or an empty string for all
+day; the observed UI exposes no body-composition store option. The inspected
+React Native caller and Android 6.17.0 Java/smali region bridge process records
+already returned by history, with no additional network request in that path.
+The invoked native algorithm library was not audited.
+
+The current iOS 7.11.4 panel (2.2.0) was subsequently decrypted using the panel
+extraction implementation statically recovered from Android 7.11.6. The downloaded
+Android APK's signature verified and matched the older APK's signing certificate.
+ZIP AES authentication passed, and the Hermes bytecode was inspected without
+executing the app code. An independent version-98 Hermes bytecode dump confirmed
+the Android history builder and its endpoint string boundary.
+
+The current iOS panel's default trend builder matches this library's `trendV2`
+payload. Its history builder still uses `measure/history`, with the same three
+fields and local-day Unix-second bounds tested above. Its custom-date trend
+branch sends `rhFriendId`, `timeZone`, `param`, `sourceDataType`, an empty
+`timeType`, `startTime` and `endTime`, without paging keys. Replaying that exact
+branch for the weigh-in day and for a recent 30-day range also returned code 101
+with an empty `list`. The inspected friend endpoint table exposes no separate
+body-composition read or dependent-profile selector. This remains bounded source
+evidence, not a comprehensive audit of every native or server path.
+
+No working sync-to-owner retrieval was found in these checks. The verified
+alternative is direct owner authentication; it does not satisfy the goal of
+reading the data solely as the sync account. A server-side sharing or data-store
+coverage problem remains a hypothesis requiring RENPHO's investigation. No
+account-linking or sharing settings were changed, and no traffic interception
+was used.
