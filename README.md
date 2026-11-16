@@ -157,6 +157,10 @@ Limitations:
 - Friend IDs identify shared accounts. Household member profiles are a separate
   concept; this API has no demonstrated family-member selector. It must not be
   assumed to expose every member of a friend's household.
+- Live validation on one account found recent owner records through the direct
+  body-composition endpoint, while the accepted friend returned empty daily
+  trends for all eight metrics. Successful friend discovery does not guarantee
+  access to that account's body-composition history; see the investigation notes.
 
 For multiple independent friends, fetch each ID separately and keep the results
 keyed by friend ID. For profiles accessible through your own account, the existing

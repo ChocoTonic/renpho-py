@@ -137,6 +137,33 @@ response can identify a request contract, but cannot validate populated values
 or household sharing. Do not infer friend parameters from ordinary measurement
 field names, or assume the visible Year label is the literal API enum `YEAR`.
 
-No accepted-friend measurement response has been fetched by this Python port,
-and no traffic capture was performed. Unit tests validate the client contract
-with encrypted fixtures, not the current service's data-sharing behavior.
+## Direct API validation on 2026-11-16
+
+The PR branch was tested with password authentication as the sync account. Login
+succeeded, friend discovery returned the intended main account, and that friend
+ID matched the main account's independently configured expected account ID.
+
+With `time_type="MONTH"`, `end_time=0` and an explicit UTC offset of `-8`, all
+eight default `trendV2` requests returned success code 101 with decrypted
+`{"list": [], "endTime": ...}` responses. This was a genuine empty list in the
+known response shape, not data discarded by the normalization helper.
+`measure/has` also succeeded with an empty list. The summary endpoint succeeded
+and returned the documented summary fields as strings.
+
+A separate password login to the main account matched the expected account ID.
+Two minimal page-one baseline queries used that account's advertised table and
+requested only the owner ID. The body-composition endpoint returned two recent
+owner-profile records; the legacy measurement endpoint returned no rows. Both
+returned record ownership IDs matched the requested owner ID.
+
+For this tested account, the friend workaround therefore authenticates and
+discovers the right relationship but does **not** retrieve the existing recent
+owner measurements. The app's empty friend views agree with the API result.
+An alternate target ID or a dependent household profile is not required to
+explain this comparison: the requested owner identity was verified directly.
+
+The store difference makes friend coverage of body-composition data, or a
+missing source/category request option, a useful hypothesis. It does not prove
+that the friend API never supports that store. Inspect the runtime bundle's
+request builders or capture the relevant read-screen requests before choosing
+new endpoints or discriminator values. No MITM capture was performed.
