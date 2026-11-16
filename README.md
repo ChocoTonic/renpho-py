@@ -57,6 +57,7 @@ This will log in, discover your scales, fetch all measurements, print the 5 most
 | `RENPHO_PASSWORD` | Yes | Your Renpho account password |
 | `RENPHO_DEBUG` | No | Set to `1` to print API request/response details |
 | `RENPHO_OUTPUT_DIR` | No | Output directory (default: `renpho_data`) |
+| `RENPHO_FRIEND_ID` | No | Export one accepted friend's daily data instead of your own |
 
 ## Library Usage
 
@@ -105,6 +106,61 @@ if not measurements:
 save_json(measurements, "my_data.json")
 save_csv(measurements, "my_data.csv")
 ```
+
+### Reading through a friend account
+
+To sync without repeatedly signing the phone out of your main account, use a
+second Renpho account with email/password credentials. Add it as a friend in
+the app and accept the request so it can view the main account's shared data.
+Configure the script with the second account's credentials.
+
+```python
+client = RenphoClient("sync-account@example.com", "password")
+friends = client.get_friends()  # All pages; entries include userId and accountName
+for friend in friends:
+    print(friend["userId"], friend.get("accountName", ""))
+
+# Choose the intended userId from the list, rather than assuming the first one.
+friend_id = "1234567890123456789"
+records = client.get_friend_measurements(friend_id, time_zone=0)
+# [{"day": "2026-11-02", "timeStamp": ..., "weight": 79.5, "bodyfat": 20.1}, ...]
+```
+
+`get_friend_trend(friend_id, "weight")` returns daily points for one metric.
+`get_friend_measure_days()` and `get_friend_summary()` return the decrypted
+server data. Friend calls use the existing encrypted transport and authentication.
+
+For the CLI, set `RENPHO_FRIEND_ID` to that friend's `userId`, alongside the
+second account's credentials. It skips device/shard discovery and writes
+`friend_daily.json` and `friend_daily.csv` for the current window.
+
+Limitations:
+
+- One daily point per metric, reported by the reference implementation as the
+  last weigh-in that day. These are daily summaries, not full measurement records.
+- Eight metrics: weight, body fat, water, muscle, bone, visceral fat, BMR and BMI.
+  Composition values appear only when available. No segmental or girth data.
+- A bounded window, not all history. Use `end_time` (Unix seconds, `0` = now)
+  to request older windows through the library. The CLI exports one window only.
+- Whole-hour UTC offsets only. The default is the machine's current offset;
+  pass `time_zone=0` for UTC or another integer offset. Fractional local offsets
+  raise an error rather than silently choosing the wrong day boundary. The CLI
+  uses the machine's offset. Historical DST boundaries need caller attention.
+- Password authentication is required for the second account. A social-login-only
+  account needs password credentials before this library can use it.
+- Friend IDs identify shared accounts. Household member profiles are a separate
+  concept; this API has no demonstrated family-member selector. It must not be
+  assumed to expose every member of a friend's household.
+
+For multiple independent friends, fetch each ID separately and keep the results
+keyed by friend ID. For profiles accessible through your own account, the existing
+`get_measurement_profiles()` and `get_all_measurements(profile_user_id=...)`
+provide profile selection. See [the investigation notes](docs/friend-accounts.md)
+for the upstream review and the remaining household validation.
+
+Adapted from [upstream PR #18](https://github.com/danvaneijck/renpho-api/pull/18)
+and [issue #14](https://github.com/danvaneijck/renpho-api/issues/14), with protocol
+details from [renpho-friends](https://github.com/DawidKrynski/renpho-friends).
 
 ### Multiple Renpho accounts on one email
 

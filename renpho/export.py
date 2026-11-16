@@ -70,7 +70,7 @@ def save_csv(measurements: list[dict], filepath: str | Path) -> Path | None:
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     priority = [
-        "timeStamp", "localCreatedAt",
+        "day", "timeStamp", "localCreatedAt",
         *(key for key, _, _ in METRICS),
         "scaleName", "height", "gender",
     ]

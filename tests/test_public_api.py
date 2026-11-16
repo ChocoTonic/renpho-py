@@ -44,6 +44,16 @@ EXPECTED_METHODS = {
     "measurement_table_for": ["user_id"],
     "get_measurement_profiles": ["self"],
     "clear_table_cache": ["self"],
+    "local_utc_offset_hours": [],
+    "get_friends": ["self", "page_size"],
+    "get_friend_measure_days": ["self", "friend_id", "time_zone"],
+    "get_friend_summary": ["self", "friend_id", "param"],
+    "get_friend_trend": [
+        "self", "friend_id", "param", "time_type", "end_time", "time_zone",
+    ],
+    "get_friend_measurements": [
+        "self", "friend_id", "params", "time_type", "end_time", "time_zone",
+    ],
 }
 
 

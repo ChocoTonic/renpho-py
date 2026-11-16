@@ -15,7 +15,16 @@ ENDPOINTS = {
     "measurements": "RenphoHealth/scale/queryAllMeasureDataList",
     "body_composition_measurements": "RenphoHealth/scale/queryBodyCompositionMeasureData",
     "body_composition_scale_count": "RenphoHealth/scale/bodyCompositionScaleCount",
+    "friends": "RenphoHealth/app/friend/friendsList",
+    "friend_measure_days": "RenphoHealth/app/friend/measure/has",
+    "friend_summary": "RenphoHealth/app/friend/measure/model",
+    "friend_trend": "RenphoHealth/app/friend/measure/trendV2",
 }
+
+# One trend request is needed for each daily metric.
+FRIEND_TREND_PARAMS = (
+    "weight", "bodyfat", "water", "muscle", "bone", "visfat", "bmr", "bmi",
+)
 
 # Renpho measurement tables use 24 decimal suffixes.
 MEASUREMENT_TABLE_SHARDS = 24

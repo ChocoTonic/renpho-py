@@ -15,12 +15,41 @@ from .client import RenphoClient
 from .export import format_measurement, save_csv, save_json
 
 
+def _fetch_friend(client: RenphoClient, friend_id: str, output_dir: Path) -> None:
+    """Friend mode: read another account's daily data via the friends feature."""
+    print(f"Fetching daily data for friend {friend_id}...")
+    records = client.get_friend_measurements(friend_id)
+    if not records:
+        print("  No data returned. Check that RENPHO_FRIEND_ID is a userId from")
+        print("  the friends list and that the friend request was accepted.")
+        friends = client.get_friends()
+        if friends:
+            print("  Friends of this account:")
+            for f in friends:
+                print(f"    {f.get('userId')}  {f.get('accountName', '')}")
+        return
+
+    print(f"Total: {len(records)} day(s), newest {records[0]['day']}")
+    for r in records[:5]:
+        print(f"\n{'=' * 55}")
+        print(f"  Day {r['day']}")
+        print(f"{'=' * 55}")
+        print(format_measurement(r))
+    if len(records) > 5:
+        print(f"\n  ... and {len(records) - 5} more")
+
+    save_json(records, output_dir / "friend_daily.json")
+    save_csv(records, output_dir / "friend_daily.csv")
+    print(f"\nDone! Data saved to '{output_dir}/' folder.")
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the ``renpho`` CLI command."""
     email = os.getenv("RENPHO_EMAIL", "")
     password = os.getenv("RENPHO_PASSWORD", "")
     debug = os.getenv("RENPHO_DEBUG", "").lower() in ("1", "true", "yes")
     output_dir = Path(os.getenv("RENPHO_OUTPUT_DIR", "renpho_data"))
+    friend_id = os.getenv("RENPHO_FRIEND_ID", "").strip()
 
     if not email or not password:
         print("Missing credentials!\n")
@@ -36,6 +65,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Logging in as {email}...")
     client.login()
     print(f"Logged in! User ID: {client.user_id}")
+
+    if friend_id:
+        _fetch_friend(client, friend_id, output_dir)
+        return
 
     # Step 2: Device info
     print("Getting device info...")

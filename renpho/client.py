@@ -2,7 +2,9 @@
 
 import json
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import requests
 
@@ -10,6 +12,7 @@ from .constants import (
     APP_VERSION,
     BODY_WEIGHT_SCALES,
     ENDPOINTS,
+    FRIEND_TREND_PARAMS,
     MEASUREMENT_TABLE_NAMES,
     MEASUREMENT_TABLE_SHARDS,
     PLATFORM,
@@ -93,6 +96,7 @@ class RenphoClient:
         *,
         auth: bool = True,
         session: requests.Session | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict:
         """Assemble auth headers and delegate the request to the transport.
 
@@ -107,6 +111,8 @@ class RenphoClient:
             headers["token"] = self.token
             headers["userId"] = str(self.user_id)
 
+        if extra_headers:
+            headers.update(extra_headers)
         return self._transport.post(endpoint, body, headers=headers, session=session)
 
     # ----- public API -----
@@ -639,6 +645,185 @@ class RenphoClient:
         )
         return all_measurements
 
+
+    # ----- friends (read another account's data) -----
+    #
+    # Renpho keeps one active session per account, so logging in as your main
+    # account signs the phone app out. Instead, log in as a second account that
+    # the main account has accepted as a friend, and read the main account's
+    # data through these endpoints. See the README and issue #14.
+
+    @staticmethod
+    def local_utc_offset_hours() -> int:
+        """This machine's UTC offset in whole hours, the friend endpoints' default."""
+        offset = datetime.now().astimezone().utcoffset()
+        seconds = offset.total_seconds() if offset is not None else 0
+        if seconds % 3600:
+            raise ValueError(
+                "Friend endpoints require whole-hour offsets; pass time_zone explicitly"
+            )
+        return int(seconds / 3600)
+
+    def _friend_post(self, endpoint: str, payload: dict, context: str, time_zone: int):
+        """POST to a friend endpoint and return the decrypted ``data`` (or None).
+
+        ``measure/has`` and ``measure/trendV2`` reject requests without a
+        ``timeZone`` header in signed form (``+0``, ``+2``, ``-5``). The other
+        friend endpoints accept it, so it is always sent.
+        """
+        if not self.token:
+            self.login()
+        result = self._post(
+            endpoint,
+            encrypt_request(payload),
+            extra_headers={"timeZone": f"{time_zone:+d}"},
+        )
+        _check_response(result, context)
+        if not result.get("data"):
+            return None
+        return decrypt_response(result["data"])
+
+    def get_friends(self, *, page_size: int = 50) -> list[dict]:
+        """List the accounts that have accepted this account as a friend.
+
+        Each entry includes ``userId``, ``accountName``, ``email`` and
+        ``createTime``. Pass ``userId`` to the other ``get_friend_*`` methods.
+
+        Paginates until a short page. Calls :meth:`login` first if needed.
+        """
+        if page_size <= 0:
+            raise ValueError("page_size must be positive")
+        if not self.token:
+            self.login()
+        friends: list[dict] = []
+        seen: set[str] = set()
+        page = 1
+        while True:
+            data = self._friend_post(
+                ENDPOINTS["friends"],
+                {"userId": str(self.user_id), "pageNum": page, "pageSize": page_size},
+                "GetFriends",
+                0,
+            )
+            records = self._extract_records(data) or []
+            if not records:
+                break
+            fingerprints = {json.dumps(row, sort_keys=True) for row in records}
+            if fingerprints.issubset(seen):
+                raise RenphoAPIError("GetFriends", None, "Friend pagination made no progress")
+            seen.update(fingerprints)
+            friends.extend(records)
+            if len(records) < page_size:
+                break
+            page += 1
+        return friends
+
+    def get_friend_measure_days(self, friend_id: UserId, *, time_zone: int | None = None):
+        """Days on which *friend_id* weighed in, as returned by the server (raw)."""
+        tz = self.local_utc_offset_hours() if time_zone is None else time_zone
+        return self._friend_post(
+            ENDPOINTS["friend_measure_days"],
+            {"rhFriendIds": str(friend_id), "timeZone": tz},
+            "GetFriendMeasureDays",
+            tz,
+        )
+
+    def get_friend_summary(self, friend_id: UserId, param: str = "weight") -> dict | None:
+        """Summary statistics for one parameter of *friend_id* (raw dict)."""
+        return self._friend_post(
+            ENDPOINTS["friend_summary"],
+            {"rhFriendId": str(friend_id), "param": param},
+            "GetFriendSummary",
+            0,
+        )
+
+    def get_friend_trend(
+        self,
+        friend_id: UserId,
+        param: str = "weight",
+        *,
+        time_type: str = "MONTH",
+        end_time: int = 0,
+        time_zone: int | None = None,
+    ) -> list[dict]:
+        """Daily points for one parameter of *friend_id*.
+
+        Args:
+            friend_id: ``userId`` from :meth:`get_friends`.
+            param: One of :data:`~renpho.constants.FRIEND_TREND_PARAMS`.
+            time_type: Window granularity, e.g. ``"WEEK"`` or ``"MONTH"``.
+            end_time: End of the window in unix seconds; ``0`` means now. Move
+                it back to page through older data.
+            time_zone: UTC offset in whole hours used to group points into
+                days. Defaults to this machine's offset.
+
+        Returns:
+            List of ``{"groupDay", "timeStamp", "value", ...}`` dicts, one per
+            day with a measurement (the last weigh-in of that day).
+        """
+        tz = self.local_utc_offset_hours() if time_zone is None else time_zone
+        data = self._friend_post(
+            ENDPOINTS["friend_trend"],
+            {
+                "rhFriendId": str(friend_id),
+                "timeZone": tz,
+                "param": param,
+                "sourceDataType": "",
+                "timeType": time_type,
+                "endTime": end_time,
+            },
+            f"GetFriendTrend({param})",
+            tz,
+        )
+        if isinstance(data, dict) and isinstance(data.get("list"), list):
+            return data["list"]
+        return data if isinstance(data, list) else []
+
+    def get_friend_measurements(
+        self,
+        friend_id: UserId,
+        *,
+        params: tuple[str, ...] | list[str] = FRIEND_TREND_PARAMS,
+        time_type: str = "MONTH",
+        end_time: int = 0,
+        time_zone: int | None = None,
+    ) -> list[dict]:
+        """One record per day for *friend_id*, merged across *params*.
+
+        Calls :meth:`get_friend_trend` once per parameter and merges the points
+        by day into ``{"day", "timeStamp", "weight", "bodyfat", ...}``. Body
+        composition values appear only on days the scale measured them. Zero and
+        missing values are dropped.
+
+        Limits of the friend endpoints: one value per day, no segmental or girth
+        data, and one call covers a limited window (move *end_time* back for
+        older data).
+
+        Returns:
+            List of daily records sorted newest first.
+        """
+        tz = self.local_utc_offset_hours() if time_zone is None else time_zone
+        days: dict = {}
+        for param in params:
+            points = self.get_friend_trend(
+                friend_id, param,
+                time_type=time_type, end_time=end_time, time_zone=tz,
+            )
+            for point in points:
+                day = point.get("groupDay")
+                value = point.get("value")
+                if (
+                    not day or not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not math.isfinite(value) or value <= 0
+                ):
+                    continue
+                record = days.setdefault(
+                    day, {"day": day, "timeStamp": point.get("timeStamp")}
+                )
+                record[param] = value
+        return sorted(
+            days.values(), key=lambda r: r.get("timeStamp") or 0, reverse=True
+        )
 
     @staticmethod
     def _extract_records(page_data) -> list[dict] | None:

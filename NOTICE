@@ -6,6 +6,11 @@ This project began as a copy of the MIT-licensed `renpho-api`
 independently maintained. The original license and copyright are preserved in
 LICENSE.
 
+The friend-account read methods and tests are adapted from renpho-api PR #18
+(https://github.com/danvaneijck/renpho-api/pull/18), based on the protocol
+documented by DawidKrynski in renpho-friends
+(https://github.com/DawidKrynski/renpho-friends).
+
 The underlying Renpho cloud API was reverse-engineered; the approach and
 protocol details are based on RenphoGarminSync-CLI
 (https://github.com/forkerer/RenphoGarminSync-CLI).
