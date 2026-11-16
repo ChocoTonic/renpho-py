@@ -111,14 +111,31 @@ Both trend screens offered Week, Month and Year. The scale screen displayed
 Weight, BMI, Body Fat and Subcutaneous Fat tabs; the tape screen displayed Neck,
 Shoulder, Chest and Waist tabs. Further tabs extended beyond the visible area.
 These are visible UI capabilities, not verified API parameters or endpoint paths.
-The checked views showed no data for the sync account, so they do not establish
-that measurements can be retrieved in the intended sync-to-main direction.
+The checked views showed no data for the sync account. After switching back to
+the sync account, its Friends screen also listed the main account. The intended
+sync-to-main direction was then checked: Weight in Week and Year views, Body
+Fat and Subcutaneous Fat in Year view, and Neck in the Tape Measure Week and
+Year views all displayed "No data available". The current history calendar was
+also empty for the selected date. This verifies navigation in both directions,
+not successful retrieval of a populated shared timeline. It does not establish
+whether the cause is profile selection, sharing scope, the selected period,
+missing cloud records, or another service behavior.
 
 In particular, the app's Tape Measure view means that lack of girth support in
 this client must not be described as proof that friend girth sharing is
 impossible. Public source inspection or a targeted request comparison is needed
 to identify its contract. No household-member selector was visible on the
 screens inspected; that is not proof that none exists elsewhere.
+
+A follow-up public-source search found no verified friend tape request or extra
+metric mapping. Upstream's [endpoint research](https://github.com/danvaneijck/renpho-api/blob/6df01f7c22bc72bc81bd4281b71382444d189bee/docs/endpoints.md)
+reports that friend screens use a React Native bundle downloaded at runtime.
+Inspecting that bundle's request builders could avoid interception. Otherwise,
+a targeted capture should compare Weight versus Subcutaneous Fat, Week versus
+Year, and Scale versus Tape Measure, changing one control at a time. An empty
+response can identify a request contract, but cannot validate populated values
+or household sharing. Do not infer friend parameters from ordinary measurement
+field names, or assume the visible Year label is the literal API enum `YEAR`.
 
 No accepted-friend measurement response has been fetched by this Python port,
 and no traffic capture was performed. Unit tests validate the client contract
