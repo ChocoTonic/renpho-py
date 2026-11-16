@@ -213,5 +213,7 @@ for request timeouts and pagination failure behavior.
 
 Use `RenphoClient.from_session_file()` for reads using an existing RENPHO token,
 without allowing password login or automatic relogin. This is session reuse,
-not a separate read-only credential. See [session import](docs/session-import.md)
+not a separate read-only credential. `refresh_session()` performs the app's
+renewal check and saves replacement tokens; `token_expires_at` reports expiry.
+See [session import](docs/session-import.md)
 for the file format, failure behavior and current limitations.

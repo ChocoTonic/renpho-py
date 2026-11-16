@@ -1,7 +1,11 @@
 """Renpho API client for fetching scale measurements."""
 
+import base64
 import json
 import logging
+import math
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -32,6 +36,18 @@ UserId = int | str
 __all__ = ["RenphoClient", "RenphoAPIError", "RenphoSessionError"]
 
 logger = logging.getLogger(__name__)
+
+
+def _positive_timestamp(value: object) -> float:
+    if type(value) not in (int, float):
+        raise ValueError("invalid token timestamp")
+    try:
+        timestamp = float(value)  # type: ignore[arg-type]
+    except (OverflowError, ValueError):
+        raise ValueError("invalid token timestamp") from None
+    if not math.isfinite(timestamp) or timestamp <= 0:
+        raise ValueError("invalid token timestamp")
+    return timestamp
 
 
 def _normalize_device_info(data: object) -> dict:
@@ -81,6 +97,8 @@ class RenphoClient:
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
         self._session_only = False
+        self._session_file: Path | None = None
+        self._session_expires_at: float | None = None
         self._transport = Transport(debug=debug, timeout=timeout)
         # Cache of shard-discovery results, keyed by str(user_id).
         self._table_cache: dict[str, list[str]] = {}
@@ -115,6 +133,8 @@ class RenphoClient:
         client = cls(email, "", debug=debug, timeout=timeout)
         client._session_only = True
         client.token, client.user_id = token, uid
+        if data.get("expires_at") is not None:
+            client._session_expires_at = _positive_timestamp(data["expires_at"])
         return client
 
     @classmethod
@@ -128,9 +148,90 @@ class RenphoClient:
             data = json.loads(Path(path).expanduser().read_text())
         except (OSError, ValueError):
             raise ValueError("cannot read session JSON file") from None
-        return cls.from_session(
+        client = cls.from_session(
             data, expected_user_id=expected_user_id, debug=debug, timeout=timeout,
         )
+        client._session_file = Path(path).expanduser()
+        return client
+
+    @property
+    def token_expires_at(self) -> float | None:
+        """Expiry in Unix seconds; JWT claims are decoded, not verified offline."""
+        if self._session_expires_at is not None:
+            return self._session_expires_at
+        try:
+            part = (self.token or "").split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+            return _positive_timestamp(claims.get("exp"))
+        except (ValueError, IndexError, TypeError, AttributeError):
+            pass
+        return None
+
+    def save_session(self, path: str | Path | None = None) -> Path:
+        """Atomically save the current token with owner-only file permissions."""
+        target = Path(path).expanduser() if path is not None else self._session_file
+        if target is None:
+            raise ValueError("no session file configured")
+        if not self.token or self.user_id is None:
+            raise RenphoSessionError("SaveSession", None, "No current session to save")
+        data = {"email": self.email, "user_id": self.user_id, "token": self.token,
+                "expires_at": self.token_expires_at}
+        fd, name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        try:
+            with os.fdopen(fd, "w") as stream:
+                json.dump(data, stream)
+            os.replace(name, target)
+        finally:
+            Path(name).unlink(missing_ok=True)
+        self._session_file = target
+        return target
+
+    def refresh_session(self) -> dict:
+        """Query the app's token-time endpoint and adopt any replacement token.
+
+        RENPHO decides when to issue a replacement; this cannot revive a revoked
+        session. No password login is attempted. A file-imported session is saved
+        automatically. The return value contains timestamps and a replacement
+        flag, never the token. This explicit operation may rotate a shared token.
+        """
+        if not self.token or self.user_id is None:
+            raise RenphoSessionError("RefreshSession", None, "No current session to refresh")
+        result = self._post(ENDPOINTS["token_time"], encrypt_empty_object())
+        _check_response(result, "RefreshSession")
+        data = decrypt_response(result["data"]) if result.get("data") else None
+        if not isinstance(data, dict):
+            raise RenphoSessionError("RefreshSession", None, "Invalid token-time response")
+        if data.get("userId") is not None and str(data["userId"]) != str(self.user_id):
+            raise RenphoSessionError("RefreshSession", None, "Token-time account mismatch")
+        token = data.get("token")
+        if token is not None and not isinstance(token, str):
+            raise RenphoSessionError("RefreshSession", None, "Invalid replacement token")
+        times = {}
+        for key in ("issAt", "expAt"):
+            value = data.get(key)
+            if value is not None:
+                try:
+                    times[key] = _positive_timestamp(value) / 1000
+                except ValueError:
+                    raise RenphoSessionError(
+                        "RefreshSession", None, "Invalid token timestamp",
+                    ) from None
+        replaced = bool(token and token.strip() and token != self.token)
+        if replaced:
+            self.token = token
+            self._session_expires_at = None
+        if "expAt" in times:
+            self._session_expires_at = times["expAt"]
+        if self._session_file is not None:
+            try:
+                self.save_session()
+            except OSError:
+                raise RenphoSessionError(
+                    "RefreshSession", None,
+                    "Session updated in memory but could not save it; retry save_session().",
+                ) from None
+        return {"issued_at": times.get("issAt"), "expires_at": self.token_expires_at,
+                "token_replaced": replaced}
 
     # ----- internal helpers -----
 

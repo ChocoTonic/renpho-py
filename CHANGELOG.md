@@ -10,6 +10,8 @@ bump the major version only.
 - Import an existing session from an object or JSON file with optional expected
   account validation. Imported-session clients forbid password login and raise
   `RenphoSessionError` on session rejection without attempting reauthentication.
+- Explicit session renewal using the app's token-time endpoint, replacement
+  token adoption, atomic owner-only persistence, and session-expiry reporting.
 
 ## [1.3.1] — 2026-11-09
 
