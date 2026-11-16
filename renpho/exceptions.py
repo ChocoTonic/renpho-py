@@ -13,6 +13,10 @@ class RenphoAPIError(Exception):
         super().__init__(f"{context} failed: code={code}, msg={msg}")
 
 
+class RenphoSessionError(RenphoAPIError):
+    """An imported session is missing or rejected; no login is attempted."""
+
+
 def check_response(result: dict, context: str = "API call") -> None:
     """Raise :class:`RenphoAPIError` if the response indicates failure."""
     code = result.get("code")

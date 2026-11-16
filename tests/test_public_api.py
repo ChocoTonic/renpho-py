@@ -21,6 +21,7 @@ EXPECTED_EXPORTS = [
     "Measurement",
     "RenphoAPIError",
     "RenphoClient",
+    "RenphoSessionError",
     "format_measurement",
     "format_timestamp",
     "save_csv",
@@ -30,6 +31,8 @@ EXPECTED_EXPORTS = [
 # Public RenphoClient methods -> ordered parameter names (incl. keyword-only).
 EXPECTED_METHODS = {
     "__init__": ["self", "email", "password", "debug", "timeout"],
+    "from_session": ["data", "expected_user_id", "debug", "timeout"],
+    "from_session_file": ["path", "expected_user_id", "debug", "timeout"],
     "login": ["self", "expected_user_id"],
     "get_device_info": ["self"],
     "get_measurements": ["self", "table_name", "user_id", "total_count", "page_size"],

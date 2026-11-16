@@ -14,6 +14,7 @@ Quick start::
 from importlib.metadata import PackageNotFoundError, version
 
 from .client import RenphoAPIError, RenphoClient
+from .exceptions import RenphoSessionError
 from .export import format_measurement, format_timestamp, save_csv, save_json
 from .models import Measurement
 
@@ -25,6 +26,7 @@ except PackageNotFoundError:  # pragma: no cover - source checkout without insta
 __all__ = [
     "RenphoClient",
     "RenphoAPIError",
+    "RenphoSessionError",
     "Measurement",
     "format_measurement",
     "format_timestamp",

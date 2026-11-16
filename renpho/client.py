@@ -3,6 +3,7 @@
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import requests
 
@@ -20,7 +21,7 @@ from .crypto import (
     encrypt_empty_object,
     encrypt_request,
 )
-from .exceptions import RenphoAPIError
+from .exceptions import RenphoAPIError, RenphoSessionError
 from .exceptions import check_response as _check_response
 from .transport import Transport
 
@@ -28,7 +29,7 @@ from .transport import Transport
 # stringified int (measurement queries); accept either.
 UserId = int | str
 
-__all__ = ["RenphoClient", "RenphoAPIError"]
+__all__ = ["RenphoClient", "RenphoAPIError", "RenphoSessionError"]
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,57 @@ class RenphoClient:
         self.token: str | None = None
         self.user_id: int | str | None = None
         self.user_info: dict | None = None
+        self._session_only = False
         self._transport = Transport(debug=debug, timeout=timeout)
         # Cache of shard-discovery results, keyed by str(user_id).
         self._table_cache: dict[str, list[str]] = {}
 
+
+    # ----- existing-session construction -----
+
+    @classmethod
+    def from_session(
+        cls, data: dict, *, expected_user_id: UserId | None = None,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ) -> "RenphoClient":
+        """Import an existing session without allowing password login.
+
+        ``data`` contains ``token`` and ``user_id``, and optionally ``email``.
+        The server validates the token on the first request. This does not
+        create restricted read-only credentials or a second server session.
+        """
+        if not isinstance(data, dict):
+            raise ValueError("session must be an object")
+        token, uid = data.get("token"), data.get("user_id")
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("session requires a nonempty token")
+        if type(uid) not in (int, str) or not str(uid).isascii() or not str(uid).isdigit():
+            raise ValueError("session requires a numeric user_id")
+        if expected_user_id is not None and str(uid) != str(expected_user_id):
+            raise ValueError("session user_id does not match expected_user_id")
+        email = data.get("email", "")
+        if not isinstance(email, str):
+            raise ValueError("session email must be a string")
+        client = cls(email, "", debug=debug, timeout=timeout)
+        client._session_only = True
+        client.token, client.user_id = token, uid
+        return client
+
+    @classmethod
+    def from_session_file(
+        cls, path: str | Path, *, expected_user_id: UserId | None = None,
+        debug: bool = False,
+        timeout: float | tuple[float, float] = (10.0, 30.0),
+    ) -> "RenphoClient":
+        """Read a local session JSON file; never fall back to password login."""
+        try:
+            data = json.loads(Path(path).expanduser().read_text())
+        except (OSError, ValueError):
+            raise ValueError("cannot read session JSON file") from None
+        return cls.from_session(
+            data, expected_user_id=expected_user_id, debug=debug, timeout=timeout,
+        )
 
     # ----- internal helpers -----
 
@@ -100,6 +148,8 @@ class RenphoClient:
         (used for concurrent shard probing, where sharing one session across
         threads would be unsafe). Defaults to the transport's own session.
         """
+        if self._session_only and (endpoint == ENDPOINTS["login"] or not self.token):
+            raise RenphoSessionError("Session", None, "Imported-session mode forbids login")
         # Protocol headers are required even before login. Without them the
         # server rejects the encrypted payload with code -114.
         headers: dict[str, str] = {"appVersion": APP_VERSION, "platform": PLATFORM}
@@ -107,7 +157,22 @@ class RenphoClient:
             headers["token"] = self.token
             headers["userId"] = str(self.user_id)
 
-        return self._transport.post(endpoint, body, headers=headers, session=session)
+        try:
+            result = self._transport.post(endpoint, body, headers=headers, session=session)
+        except requests.HTTPError as error:
+            if (self._session_only and error.response is not None
+                    and error.response.status_code in (401, 403)):
+                raise RenphoSessionError(
+                    "Session", error.response.status_code,
+                    "Imported session rejected; obtain a current session. Login was not attempted.",
+                ) from None
+            raise
+        if self._session_only and str(result.get("code")) in ("401", "403"):
+            raise RenphoSessionError(
+                "Session", result.get("code"),
+                "Imported session rejected; obtain a current session. Login was not attempted.",
+            )
+        return result
 
     # ----- public API -----
 
@@ -125,6 +190,8 @@ class RenphoClient:
             RenphoAPIError: If the API rejects the credentials.
             requests.HTTPError: On transport-level failures.
         """
+        if self._session_only:
+            raise RenphoSessionError("Login", None, "Imported-session mode forbids login")
         login_payload = {
             "questionnaire": {},
             "login": {
@@ -388,6 +455,8 @@ class RenphoClient:
                     decrypt_response(result["data"])
                 ):
                     return True
+            except RenphoSessionError:
+                raise
             except (requests.exceptions.RequestException, RenphoAPIError) as error:
                 failures.append(error)
                 if self.debug:
@@ -626,6 +695,8 @@ class RenphoClient:
                         "A configured extra account became empty after discovery; "
                         "retry the fetch before accepting a partial timeline.",
                     )
+            except RenphoSessionError:
+                raise
             except (requests.exceptions.RequestException, RenphoAPIError) as e:
                 if strict:
                     raise
