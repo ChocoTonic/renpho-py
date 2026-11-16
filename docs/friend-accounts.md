@@ -99,6 +99,27 @@ and retain redacted fixtures rather than passwords, tokens or health histories.
 5. Use app inspection or a targeted capture only if the household case needs a
    request variant beyond the published friend API.
 
-No live Renpho authentication, real friend-data read, or traffic capture was
-performed while preparing this port. Unit tests validate the client contract
+## Official-app observations on 2026-11-16
+
+Google sign-in to the sync account succeeded, and a friend request was sent.
+After the account holder accepted it, the main account's Friends screen listed
+the sync account. This verifies an accepted relationship in the official app,
+not the Python client's accepted-friend response contract.
+
+The friend's submenu offered both **Body Fat Scale** and **Tape Measure**.
+Both trend screens offered Week, Month and Year. The scale screen displayed
+Weight, BMI, Body Fat and Subcutaneous Fat tabs; the tape screen displayed Neck,
+Shoulder, Chest and Waist tabs. Further tabs extended beyond the visible area.
+These are visible UI capabilities, not verified API parameters or endpoint paths.
+The checked views showed no data for the sync account, so they do not establish
+that measurements can be retrieved in the intended sync-to-main direction.
+
+In particular, the app's Tape Measure view means that lack of girth support in
+this client must not be described as proof that friend girth sharing is
+impossible. Public source inspection or a targeted request comparison is needed
+to identify its contract. No household-member selector was visible on the
+screens inspected; that is not proof that none exists elsewhere.
+
+No accepted-friend measurement response has been fetched by this Python port,
+and no traffic capture was performed. Unit tests validate the client contract
 with encrypted fixtures, not the current service's data-sharing behavior.

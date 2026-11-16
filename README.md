@@ -142,7 +142,9 @@ Limitations:
 - One daily point per metric, reported by the reference implementation as the
   last weigh-in that day. These are daily summaries, not full measurement records.
 - Eight metrics: weight, body fat, water, muscle, bone, visceral fat, BMR and BMI.
-  Composition values appear only when available. No segmental or girth data.
+  Composition values appear only when available. These methods do not retrieve
+  segmental or girth data. The official app also offers a Tape Measure friend
+  view, whose request contract has not been verified for this client.
 - A bounded window, not all history. Use `end_time` (Unix seconds, `0` = now)
   to request older windows through the library. The CLI exports one window only.
 - Whole-hour UTC offsets only. The default is the machine's current offset;

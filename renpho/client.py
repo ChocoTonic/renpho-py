@@ -795,9 +795,8 @@ class RenphoClient:
         composition values appear only on days the scale measured them. Zero and
         missing values are dropped.
 
-        Limits of the friend endpoints: one value per day, no segmental or girth
-        data, and one call covers a limited window (move *end_time* back for
-        older data).
+        This helper returns daily metrics, without segmental or girth data.
+        One call covers a limited window (move *end_time* back for older data).
 
         Returns:
             List of daily records sorted newest first.
