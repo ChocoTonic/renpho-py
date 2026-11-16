@@ -235,7 +235,7 @@ class TestCliFriendMode:
         monkeypatch.setenv("RENPHO_PASSWORD", "p")
         monkeypatch.setenv("RENPHO_FRIEND_ID", "7")
         monkeypatch.setenv("RENPHO_OUTPUT_DIR", str(tmp_path))
-        monkeypatch.delenv("RENPHO_FRIEND_TIME_ZONE", raising=False)
+        monkeypatch.setenv("RENPHO_FRIEND_TIME_ZONE", "0")
 
     def test_explicit_offset_works_on_fractional_offset_host(self, tmp_path, monkeypatch):
         monkeypatch.setenv("RENPHO_FRIEND_TIME_ZONE", "0")
@@ -257,6 +257,20 @@ class TestCliFriendMode:
                 main()
         assert error.value.code == 1
         login.assert_not_called()
+
+    def test_fractional_default_fails_before_login_with_actionable_message(
+        self, monkeypatch, capsys
+    ):
+        monkeypatch.delenv("RENPHO_FRIEND_TIME_ZONE")
+        with (
+            patch.object(RenphoClient, "local_utc_offset_hours", side_effect=ValueError),
+            patch.object(RenphoClient, "login") as login,
+        ):
+            with pytest.raises(SystemExit) as error:
+                main()
+        assert error.value.code == 1
+        login.assert_not_called()
+        assert "RENPHO_FRIEND_TIME_ZONE" in capsys.readouterr().out
 
     def test_empty_run_for_another_friend_does_not_report_old_exports_as_success(
         self, tmp_path, monkeypatch, capsys
