@@ -159,7 +159,7 @@ def test_failed_persistence_retains_replacement_in_memory_and_old_file(tmp_path)
     client = RenphoClient.from_session_file(path)
     with patch.object(client._transport, 'post', return_value=token_time_response(
         {"token": "new-secret"}
-    )), patch('renpho.client.os.replace', side_effect=OSError('disk error')):
+    )), patch('renpho.session.os.replace', side_effect=OSError('disk error')):
         with pytest.raises(RenphoSessionError, match='updated in memory') as exc:
             client.refresh_session()
     assert 'new-secret' not in str(exc.value)

@@ -1,11 +1,7 @@
 """Renpho API client for fetching scale measurements."""
 
-import base64
 import json
 import logging
-import math
-import os
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -27,6 +23,13 @@ from .crypto import (
 )
 from .exceptions import RenphoAPIError, RenphoSessionError
 from .exceptions import check_response as _check_response
+from .session import (
+    parse_session,
+    parse_token_time,
+    read_session_file,
+    token_expiry,
+    write_session_file,
+)
 from .transport import Transport
 
 # A Renpho user ID is sometimes an int (login response) and sometimes a
@@ -36,18 +39,6 @@ UserId = int | str
 __all__ = ["RenphoClient", "RenphoAPIError", "RenphoSessionError"]
 
 logger = logging.getLogger(__name__)
-
-
-def _positive_timestamp(value: object) -> float:
-    if type(value) not in (int, float):
-        raise ValueError("invalid token timestamp")
-    try:
-        timestamp = float(value)  # type: ignore[arg-type]
-    except (OverflowError, ValueError):
-        raise ValueError("invalid token timestamp") from None
-    if not math.isfinite(timestamp) or timestamp <= 0:
-        raise ValueError("invalid token timestamp")
-    return timestamp
 
 
 def _normalize_device_info(data: object) -> dict:
@@ -118,23 +109,11 @@ class RenphoClient:
         The server validates the token on the first request. This does not
         create restricted read-only credentials or a second server session.
         """
-        if not isinstance(data, dict):
-            raise ValueError("session must be an object")
-        token, uid = data.get("token"), data.get("user_id")
-        if not isinstance(token, str) or not token.strip():
-            raise ValueError("session requires a nonempty token")
-        if type(uid) not in (int, str) or not str(uid).isascii() or not str(uid).isdigit():
-            raise ValueError("session requires a numeric user_id")
-        if expected_user_id is not None and str(uid) != str(expected_user_id):
-            raise ValueError("session user_id does not match expected_user_id")
-        email = data.get("email", "")
-        if not isinstance(email, str):
-            raise ValueError("session email must be a string")
-        client = cls(email, "", debug=debug, timeout=timeout)
+        imported = parse_session(data, expected_user_id)
+        client = cls(imported.email, "", debug=debug, timeout=timeout)
         client._session_only = True
-        client.token, client.user_id = token, uid
-        if data.get("expires_at") is not None:
-            client._session_expires_at = _positive_timestamp(data["expires_at"])
+        client.token, client.user_id = imported.token, imported.user_id
+        client._session_expires_at = imported.expires_at
         return client
 
     @classmethod
@@ -144,10 +123,7 @@ class RenphoClient:
         timeout: float | tuple[float, float] = (10.0, 30.0),
     ) -> "RenphoClient":
         """Read a local session JSON file; never fall back to password login."""
-        try:
-            data = json.loads(Path(path).expanduser().read_text())
-        except (OSError, ValueError):
-            raise ValueError("cannot read session JSON file") from None
+        data = read_session_file(Path(path).expanduser())
         client = cls.from_session(
             data, expected_user_id=expected_user_id, debug=debug, timeout=timeout,
         )
@@ -159,13 +135,7 @@ class RenphoClient:
         """Expiry in Unix seconds; JWT claims are decoded, not verified offline."""
         if self._session_expires_at is not None:
             return self._session_expires_at
-        try:
-            part = (self.token or "").split(".")[1]
-            claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
-            return _positive_timestamp(claims.get("exp"))
-        except (ValueError, IndexError, TypeError, AttributeError):
-            pass
-        return None
+        return token_expiry(self.token)
 
     def save_session(self, path: str | Path | None = None) -> Path:
         """Atomically save the current token with owner-only file permissions."""
@@ -176,13 +146,7 @@ class RenphoClient:
             raise RenphoSessionError("SaveSession", None, "No current session to save")
         data = {"email": self.email, "user_id": self.user_id, "token": self.token,
                 "expires_at": self.token_expires_at}
-        fd, name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
-        try:
-            with os.fdopen(fd, "w") as stream:
-                json.dump(data, stream)
-            os.replace(name, target)
-        finally:
-            Path(name).unlink(missing_ok=True)
+        write_session_file(target, data)
         self._session_file = target
         return target
 
@@ -199,29 +163,14 @@ class RenphoClient:
         result = self._post(ENDPOINTS["token_time"], encrypt_empty_object())
         _check_response(result, "RefreshSession")
         data = decrypt_response(result["data"]) if result.get("data") else None
-        if not isinstance(data, dict):
-            raise RenphoSessionError("RefreshSession", None, "Invalid token-time response")
-        if data.get("userId") is not None and str(data["userId"]) != str(self.user_id):
-            raise RenphoSessionError("RefreshSession", None, "Token-time account mismatch")
-        token = data.get("token")
-        if token is not None and not isinstance(token, str):
-            raise RenphoSessionError("RefreshSession", None, "Invalid replacement token")
-        times = {}
-        for key in ("issAt", "expAt"):
-            value = data.get(key)
-            if value is not None:
-                try:
-                    times[key] = _positive_timestamp(value) / 1000
-                except ValueError:
-                    raise RenphoSessionError(
-                        "RefreshSession", None, "Invalid token timestamp",
-                    ) from None
+        renewal = parse_token_time(data, self.user_id)
+        token = renewal.token
         replaced = bool(token and token.strip() and token != self.token)
         if replaced:
             self.token = token
             self._session_expires_at = None
-        if "expAt" in times:
-            self._session_expires_at = times["expAt"]
+        if renewal.expires_at is not None:
+            self._session_expires_at = renewal.expires_at
         if self._session_file is not None:
             try:
                 self.save_session()
@@ -230,7 +179,7 @@ class RenphoClient:
                     "RefreshSession", None,
                     "Session updated in memory but could not save it; retry save_session().",
                 ) from None
-        return {"issued_at": times.get("issAt"), "expires_at": self.token_expires_at,
+        return {"issued_at": renewal.issued_at, "expires_at": self.token_expires_at,
                 "token_replaced": replaced}
 
     # ----- internal helpers -----
