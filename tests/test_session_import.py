@@ -190,3 +190,20 @@ def test_expiry_is_decoded_without_network_or_signature_verification():
 @pytest.mark.parametrize('token', ['opaque', 'header.invalid.signature', 'a.W10.b'])
 def test_opaque_or_malformed_token_has_unknown_local_expiry(token):
     assert RenphoClient.from_session({**SESSION, 'token': token}).token_expires_at is None
+
+
+def test_password_login_clears_previous_session_expiry():
+    import base64
+    payload = base64.urlsafe_b64encode(json.dumps({'exp': 1807776000}).encode()).decode()
+    replacement = 'header.' + payload + '.signature'
+    client = RenphoClient('owner@example.com', 'password')
+    client.token, client.user_id = 'old-token', '123'
+    login_data = encrypt_request({'login': {'token': replacement, 'id': '123'}})
+    with patch.object(client._transport, 'post', side_effect=[
+        token_time_response({'expAt': 2000000000000}),
+        {'code': 101, 'msg': 'success', 'data': login_data['encryptData']},
+    ]):
+        client.refresh_session()
+        assert client.token_expires_at == 2000000000
+        client.login()
+        assert client.token_expires_at == 1807776000

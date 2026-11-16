@@ -269,6 +269,7 @@ class RenphoClient:
 
         login_info = user_data.get("login", {})
         self.token = login_info.get("token")
+        self._session_expires_at = None
         self.user_id = login_info.get("id")
         self.user_info = login_info
 
