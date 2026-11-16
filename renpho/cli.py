@@ -15,19 +15,22 @@ from .client import RenphoClient
 from .export import format_measurement, save_csv, save_json
 
 
-def _fetch_friend(client: RenphoClient, friend_id: str, output_dir: Path) -> None:
+def _fetch_friend(
+    client: RenphoClient, friend_id: str, output_dir: Path, *, time_zone: int | None = None
+) -> None:
     """Friend mode: read another account's daily data via the friends feature."""
     print(f"Fetching daily data for friend {friend_id}...")
-    records = client.get_friend_measurements(friend_id)
+    records = client.get_friend_measurements(friend_id, time_zone=time_zone)
     if not records:
-        print("  No data returned. Check that RENPHO_FRIEND_ID is a userId from")
+        print("  No data returned for the current window. Check RENPHO_FRIEND_ID against")
         print("  the friends list and that the friend request was accepted.")
         friends = client.get_friends()
         if friends:
             print("  Friends of this account:")
             for f in friends:
                 print(f"    {f.get('userId')}  {f.get('accountName', '')}")
-        return
+        print("  Export failed; existing files were not updated.", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Total: {len(records)} day(s), newest {records[0]['day']}")
     for r in records[:5]:
@@ -50,6 +53,16 @@ def main(argv: list[str] | None = None) -> None:
     debug = os.getenv("RENPHO_DEBUG", "").lower() in ("1", "true", "yes")
     output_dir = Path(os.getenv("RENPHO_OUTPUT_DIR", "renpho_data"))
     friend_id = os.getenv("RENPHO_FRIEND_ID", "").strip()
+    friend_time_zone = None
+    if friend_id:
+        raw_time_zone = os.getenv("RENPHO_FRIEND_TIME_ZONE", "").strip()
+        try:
+            friend_time_zone = (
+                int(raw_time_zone) if raw_time_zone else RenphoClient.local_utc_offset_hours()
+            )
+        except ValueError:
+            print("Set RENPHO_FRIEND_TIME_ZONE to a whole-hour UTC offset (e.g. 0 or -8).")
+            sys.exit(1)
 
     if not email or not password:
         print("Missing credentials!\n")
@@ -67,7 +80,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Logged in! User ID: {client.user_id}")
 
     if friend_id:
-        _fetch_friend(client, friend_id, output_dir)
+        _fetch_friend(client, friend_id, output_dir, time_zone=friend_time_zone)
         return
 
     # Step 2: Device info

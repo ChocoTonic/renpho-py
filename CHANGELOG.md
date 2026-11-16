@@ -11,6 +11,8 @@ bump the major version only.
   an accepted friend account, allowing syncs without logging in as the main account.
 - CLI friend exports (`friend_daily.json` / `friend_daily.csv`) when
   `RENPHO_FRIEND_ID` is set; no scale or shard discovery is needed.
+- An explicit `RENPHO_FRIEND_TIME_ZONE` offset for CLI friend exports; empty
+  friend windows fail with a nonzero exit status and preserve existing files.
 
 ## [1.3.1] — 2026-11-09
 

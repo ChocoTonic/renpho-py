@@ -229,6 +229,56 @@ class TestGetFriendMeasurements:
 
 
 class TestCliFriendMode:
+    @pytest.fixture(autouse=True)
+    def friend_environment(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("RENPHO_EMAIL", "a@b.com")
+        monkeypatch.setenv("RENPHO_PASSWORD", "p")
+        monkeypatch.setenv("RENPHO_FRIEND_ID", "7")
+        monkeypatch.setenv("RENPHO_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.delenv("RENPHO_FRIEND_TIME_ZONE", raising=False)
+
+    def test_explicit_offset_works_on_fractional_offset_host(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("RENPHO_FRIEND_TIME_ZONE", "0")
+        points = [{"groupDay": "2026-11-02", "timeStamp": 200, "value": 79.5}]
+        with (
+            patch.object(RenphoClient, "login"),
+            patch.object(RenphoClient, "local_utc_offset_hours", side_effect=ValueError),
+            patch.object(RenphoClient, "get_friend_trend", return_value=points) as trend,
+        ):
+            main()
+        assert all(call.kwargs["time_zone"] == 0 for call in trend.call_args_list)
+        assert json.loads((tmp_path / "friend_daily.json").read_text())[0]["weight"] == 79.5
+
+    @pytest.mark.parametrize("offset", ["5.5", "UTC", "--8"])
+    def test_invalid_offset_fails_before_login(self, offset, monkeypatch):
+        monkeypatch.setenv("RENPHO_FRIEND_TIME_ZONE", offset)
+        with patch.object(RenphoClient, "login") as login:
+            with pytest.raises(SystemExit) as error:
+                main()
+        assert error.value.code == 1
+        login.assert_not_called()
+
+    def test_empty_run_for_another_friend_does_not_report_old_exports_as_success(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        records = [{"day": "2026-11-02", "timeStamp": 200, "weight": 79.5}]
+        with (
+            patch.object(RenphoClient, "login"),
+            patch.object(RenphoClient, "local_utc_offset_hours", return_value=0),
+            patch.object(RenphoClient, "get_friend_measurements", side_effect=[records, []]),
+            patch.object(RenphoClient, "get_friends", return_value=[]),
+        ):
+            main()
+            original_json = (tmp_path / "friend_daily.json").read_bytes()
+            original_csv = (tmp_path / "friend_daily.csv").read_bytes()
+            monkeypatch.setenv("RENPHO_FRIEND_ID", "8")
+            with pytest.raises(SystemExit) as error:
+                main()
+        assert error.value.code == 1
+        assert (tmp_path / "friend_daily.json").read_bytes() == original_json
+        assert (tmp_path / "friend_daily.csv").read_bytes() == original_csv
+        assert "existing files were not updated" in capsys.readouterr().err
+
     def test_writes_friend_daily_files_and_skips_device_discovery(self, tmp_path, monkeypatch):
         monkeypatch.setenv("RENPHO_EMAIL", "a@b.com")
         monkeypatch.setenv("RENPHO_PASSWORD", "p")

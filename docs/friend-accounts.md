@@ -25,6 +25,10 @@ Concrete gaps in the upstream implementation:
   hour. This port uses an aware datetime and requires an explicit integer
   `time_zone` when the local offset contains a fractional hour. Friend list and
   summary calls use UTC because they do not group daily trend points.
+- The CLI accepts `RENPHO_FRIEND_TIME_ZONE` so fractional-offset hosts can choose
+  UTC or another integer offset. It validates the offset before authentication.
+- Empty CLI windows exit with status 1 and report that previous exports remain
+  unchanged, rather than presenting old files as a successful fresh export.
 - The daily merge accepts booleans and nonfinite positive floats as values.
   This port excludes those as well as missing, zero and negative values.
 - The PR's validation reports an empty friend list and an API-level error for a
@@ -81,6 +85,9 @@ and retain redacted fixtures rather than passwords, tokens or health histories.
 
 1. Create or use an email/password sync account, accept its friendship from the
    main account, and verify that the sync account can see data in the app.
+   Return the phone to the main account before testing session preservation:
+   scripted login as the sync account may replace a phone session on that same
+   sync account, which would not test the main account's session.
 2. Log in only as the sync account, list friends, and compare one known day's
    weight and composition with the main account's app view. Check a second
    scripted login leaves the main account's phone session active.

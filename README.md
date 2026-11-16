@@ -58,6 +58,7 @@ This will log in, discover your scales, fetch all measurements, print the 5 most
 | `RENPHO_DEBUG` | No | Set to `1` to print API request/response details |
 | `RENPHO_OUTPUT_DIR` | No | Output directory (default: `renpho_data`) |
 | `RENPHO_FRIEND_ID` | No | Export one accepted friend's daily data instead of your own |
+| `RENPHO_FRIEND_TIME_ZONE` | No | Whole-hour UTC offset for friend exports; `0` selects UTC |
 
 ## Library Usage
 
@@ -133,6 +134,8 @@ server data. Friend calls use the existing encrypted transport and authenticatio
 For the CLI, set `RENPHO_FRIEND_ID` to that friend's `userId`, alongside the
 second account's credentials. It skips device/shard discovery and writes
 `friend_daily.json` and `friend_daily.csv` for the current window.
+An empty result exits with status 1 and leaves previous exports unchanged;
+automated consumers must check the exit status before reading those files.
 
 Limitations:
 
@@ -144,8 +147,9 @@ Limitations:
   to request older windows through the library. The CLI exports one window only.
 - Whole-hour UTC offsets only. The default is the machine's current offset;
   pass `time_zone=0` for UTC or another integer offset. Fractional local offsets
-  raise an error rather than silently choosing the wrong day boundary. The CLI
-  uses the machine's offset. Historical DST boundaries need caller attention.
+  raise an error rather than silently choosing the wrong day boundary. Set
+  `RENPHO_FRIEND_TIME_ZONE=0` for UTC CLI exports, or supply another integer
+  offset. Historical DST boundaries need caller attention.
 - Password authentication is required for the second account. A social-login-only
   account needs password credentials before this library can use it.
 - Friend IDs identify shared accounts. Household member profiles are a separate
