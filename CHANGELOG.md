@@ -6,12 +6,20 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.2] — 2026-11-16
+
 ### Added
 - Import an existing session from an object or JSON file with optional expected
   account validation. Imported-session clients forbid password login and raise
   `RenphoSessionError` on session rejection without attempting reauthentication.
 - Explicit session renewal using the app's token-time endpoint, replacement
   token adoption, atomic owner-only persistence, and session-expiry reporting.
+
+## Changes in 1.3.2
+
+* Import phone sessions and handle token renewal without password login ([#15](https://github.com/ChocoTonic/renpho-py/pull/15)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.1...ac7fcde6b1b0ba78f2c7a0787bfe9145e1b851c4)
 
 ## [1.3.1] — 2026-11-09
 
