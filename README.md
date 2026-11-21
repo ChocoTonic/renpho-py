@@ -179,6 +179,22 @@ Each measurement dict can contain these fields (availability depends on your sca
 | `cardiacIndex` | Cardiac Index | |
 | `bodyShape` | Body Shape | |
 
+## Scale history uploads
+
+A public scale-measurement upload method is a contribution opportunity for
+`RenphoClient`. Two model-specific upload paths have working examples:
+
+| RENPHO product | Hardware model | Observed API `deviceType` | Observed POST path | Working implementation |
+| --- | --- | --- | --- | --- |
+| Elis 1 | `ES-CS20M` | `00007` | `RenphoHealth/scale/uploadMeasureData/` | [Guest CSV importer](https://github.com/dchapman992000/renpho-history-import/blob/main/renpho_import.py) |
+| MorphoScan Nova | `R-MSC04` | `00053` | `RenphoHealth/scale/uploadMeasureData` | [Full Report exporter/importer PR](https://github.com/dchapman992000/renpho-history-import/pull/1) |
+
+A client implementation should preserve the exact path for each scale and the
+original measurement timestamp. On the ES-CS20M, the original device address
+allows the app to associate a reading with the scale. For a Nova Full Report,
+verify the returned report ID and read the measurement back from composition
+history to check its regional metrics and impedances.
+
 ## Project Structure
 
 ```
