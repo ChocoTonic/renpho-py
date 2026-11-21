@@ -6,6 +6,14 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-11-21
+
+## Changes in 1.3.3
+
+* Document verified scale history upload paths ([#17](https://github.com/ChocoTonic/renpho-py/pull/17)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.2...f416652ff771f15eac941f9ebaa7f403e6a86ceb)
+
 ## [1.3.2] — 2026-11-16
 
 ### Added
