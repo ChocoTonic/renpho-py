@@ -6,6 +6,9 @@ bump the major version only.
 
 ## [Unreleased]
 
+### Added
+- Upload an existing MorphoScan Nova Full Report with `RenphoClient.upload_nova_full_report()`.
+
 ## [1.3.3] — 2026-11-21
 
 ## Changes in 1.3.3

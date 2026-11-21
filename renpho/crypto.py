@@ -29,7 +29,7 @@ def aes_decrypt(encrypted_b64: str, key: str = ENCRYPTION_KEY) -> str:
     return decrypted.decode("utf-8")
 
 
-def encrypt_request(obj: dict, key: str = ENCRYPTION_KEY) -> dict:
+def encrypt_request(obj: dict | list, key: str = ENCRYPTION_KEY) -> dict:
     """Encrypt a request payload into ``{"encryptData": "..."}`` format."""
     serialized = json.dumps(obj, separators=(",", ":"))
     return {"encryptData": aes_encrypt(serialized, key)}

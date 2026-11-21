@@ -181,8 +181,20 @@ Each measurement dict can contain these fields (availability depends on your sca
 
 ## Scale history uploads
 
-A public scale-measurement upload method is a contribution opportunity for
-`RenphoClient`. Two model-specific upload paths have working examples:
+For a MorphoScan Nova transfer, select a source Full Report and an existing
+destination report from the same physical scale. Both are raw rows from
+`get_body_composition_measurements()`. Sign in to the destination profile, then:
+
+```python
+report_id = client.upload_nova_full_report(
+    source_report, destination_report=destination_report, timezone="America/Chicago"
+)
+```
+
+Pass the source measurement’s IANA timezone. Plan for duplicates before uploading
+and read back the destination row to verify its report ID, timestamp, and metrics.
+If the request times out or the acknowledgement is missing, check history before
+retrying. The Elis 1 CSV upload remains available through the external importer.
 
 | RENPHO product | Hardware model | Observed API `deviceType` | Observed POST path | Working implementation |
 | --- | --- | --- | --- | --- |

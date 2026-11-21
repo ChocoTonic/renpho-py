@@ -4,6 +4,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -23,6 +24,7 @@ from .crypto import (
 )
 from .exceptions import RenphoAPIError, RenphoSessionError
 from .exceptions import check_response as _check_response
+from .nova import acknowledged_report_id, prepare_upload
 from .session import (
     parse_session,
     parse_token_time,
@@ -190,6 +192,7 @@ class RenphoClient:
         body: dict,
         *,
         auth: bool = True,
+        extra_headers: dict[str, str] | None = None,
         session: requests.Session | None = None,
     ) -> dict:
         """Assemble auth headers and delegate the request to the transport.
@@ -203,6 +206,8 @@ class RenphoClient:
         # Protocol headers are required even before login. Without them the
         # server rejects the encrypted payload with code -114.
         headers: dict[str, str] = {"appVersion": APP_VERSION, "platform": PLATFORM}
+        if extra_headers:
+            headers.update(extra_headers)
         if auth and self.token:
             headers["token"] = self.token
             headers["userId"] = str(self.user_id)
@@ -225,6 +230,26 @@ class RenphoClient:
         return result
 
     # ----- public API -----
+
+    def upload_nova_full_report(
+        self, report: dict, *, destination_report: dict, timezone: str,
+    ) -> int | str:
+        """Upload an existing MorphoScan Nova Full Report and return its assigned report ID.
+
+        Supply raw composition-history rows and the original IANA measurement timezone.
+        The destination row must belong to the signed-in profile and the same scale.
+        Check destination history for duplicates before calling, and before retrying
+        after any ambiguous response. This method sends one write without retrying.
+        """
+        if not self.token or self.user_id is None:
+            raise RenphoSessionError("UploadNovaFullReport", None, "Sign in before uploading")
+        record, headers = prepare_upload(
+            report, destination_report, self.user_id, ZoneInfo(timezone)
+        )
+        result = self._post(ENDPOINTS["nova_full_report_upload"], encrypt_request([record]),
+                            extra_headers=headers)
+        _check_response(result, "UploadNovaFullReport")
+        return acknowledged_report_id(result, record["timeStamp"])
 
     def login(self, *, expected_user_id: UserId | None = None) -> dict:
         """Authenticate and store the session token.
