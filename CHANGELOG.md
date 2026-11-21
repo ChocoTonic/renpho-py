@@ -6,8 +6,16 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.4] — 2026-11-21
+
 ### Added
 - Upload an existing MorphoScan Nova Full Report with `RenphoClient.upload_nova_full_report()`.
+
+## Changes in 1.3.4
+
+* Add historical MorphoScan Nova Full Report uploads ([#18](https://github.com/ChocoTonic/renpho-py/pull/18)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.3...af2f778a7e6f918d93176d631806b1071edecb36)
 
 ## [1.3.3] — 2026-11-21
 
