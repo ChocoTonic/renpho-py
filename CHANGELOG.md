@@ -6,6 +6,9 @@ bump the major version only.
 
 ## [Unreleased]
 
+### Fixed
+- Display skeletal muscle percentage, muscle mass in kilograms, and bone mass in kilograms with their correct labels and units.
+
 ## [1.3.2] — 2026-11-16
 
 ### Added
