@@ -9,6 +9,7 @@ PLATFORM = "android"
 # API endpoints (from RenphoApiEndpoints.cs)
 ENDPOINTS = {
     "login": "renpho-aggregation/user/login",
+    "nova_full_report_upload": "RenphoHealth/scale/uploadMeasureData",
     "token_time": "RenphoHealth/app/sync/getTokenTime",
     "device_info": "renpho-aggregation/device/count",
     "family": "RenphoHealth/centerUser/queryFamilyMemberList",
