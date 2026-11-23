@@ -9,6 +9,25 @@ bump the major version only.
 ### Fixed
 - Display skeletal muscle percentage, muscle mass in kilograms, and bone mass in kilograms with their correct labels and units.
 
+## [1.3.4] — 2026-11-21
+
+### Added
+- Upload an existing MorphoScan Nova Full Report with `RenphoClient.upload_nova_full_report()`.
+
+## Changes in 1.3.4
+
+* Add historical MorphoScan Nova Full Report uploads ([#18](https://github.com/ChocoTonic/renpho-py/pull/18)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.3...af2f778a7e6f918d93176d631806b1071edecb36)
+
+## [1.3.3] — 2026-11-21
+
+## Changes in 1.3.3
+
+* Document verified scale history upload paths ([#17](https://github.com/ChocoTonic/renpho-py/pull/17)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.2...f416652ff771f15eac941f9ebaa7f403e6a86ceb)
+
 ## [1.3.2] — 2026-11-16
 
 ### Added

@@ -36,6 +36,7 @@ EXPECTED_METHODS = {
     "refresh_session": ["self"],
     "save_session": ["self", "path"],
     "login": ["self", "expected_user_id"],
+    "upload_nova_full_report": ["self", "report", "destination_report", "timezone"],
     "get_device_info": ["self"],
     "get_measurements": ["self", "table_name", "user_id", "total_count", "page_size"],
     "get_body_composition_measurements": [

@@ -179,6 +179,34 @@ Each measurement dict can contain these fields (availability depends on your sca
 | `cardiacIndex` | Cardiac Index | |
 | `bodyShape` | Body Shape | |
 
+## Scale history uploads
+
+For a MorphoScan Nova transfer, select a source Full Report and an existing
+destination report from the same physical scale. Both are raw rows from
+`get_body_composition_measurements()`. Sign in to the destination profile, then:
+
+```python
+report_id = client.upload_nova_full_report(
+    source_report, destination_report=destination_report, timezone="America/Chicago"
+)
+```
+
+Pass the source measurement’s IANA timezone. Plan for duplicates before uploading
+and read back the destination row to verify its report ID, timestamp, and metrics.
+If the request times out or the acknowledgement is missing, check history before
+retrying. The Elis 1 CSV upload remains available through the external importer.
+
+| RENPHO product | Hardware model | Observed API `deviceType` | Observed POST path | Working implementation |
+| --- | --- | --- | --- | --- |
+| Elis 1 | `ES-CS20M` | `00007` | `RenphoHealth/scale/uploadMeasureData/` | [Guest CSV importer](https://github.com/dchapman992000/renpho-history-import/blob/main/renpho_import.py) |
+| MorphoScan Nova | `R-MSC04` | `00053` | `RenphoHealth/scale/uploadMeasureData` | [Full Report exporter/importer PR](https://github.com/dchapman992000/renpho-history-import/pull/1) |
+
+A client implementation should preserve the exact path for each scale and the
+original measurement timestamp. On the ES-CS20M, the original device address
+allows the app to associate a reading with the scale. For a Nova Full Report,
+verify the returned report ID and read the measurement back from composition
+history to check its regional metrics and impedances.
+
 ## Project Structure
 
 ```
