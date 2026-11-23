@@ -29,6 +29,17 @@ def test_format_measurement_basic():
     assert "BMI" in result
 
 
+def test_format_measurement_muscle_and_bone_units():
+    measurement = {"muscle": 44.5, "sinew": 51.2, "bone": 2.8, "fatFreeWeight": 54.0}
+    lines = {" ".join(line.split()) for line in format_measurement(measurement).splitlines()}
+    assert {
+        "Skeletal Muscle Percentage 44.5 %",
+        "Muscle Mass 51.2 kg",
+        "Bone Mass 2.8 kg",
+        "Fat Free Weight 54.0 kg",
+    } <= lines
+
+
 def test_format_measurement_skips_zero():
     m = {"timeStamp": 1705320000, "weight": 75.5, "bodyfat": 0}
     result = format_measurement(m)
