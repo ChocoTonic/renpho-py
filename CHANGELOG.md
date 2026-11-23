@@ -6,8 +6,16 @@ bump the major version only.
 
 ## [Unreleased]
 
+## [1.3.5] — 2026-11-23
+
 ### Fixed
 - Display skeletal muscle percentage, muscle mass in kilograms, and bone mass in kilograms with their correct labels and units.
+
+## Changes in 1.3.5
+
+* Correct muscle and bone metric labels and units ([#16](https://github.com/ChocoTonic/renpho-py/pull/16)) by @ChocoTonic
+
+[Full comparison](https://github.com/ChocoTonic/renpho-py/compare/v1.3.4...a25e09319b2c6d38ae189f6ff2eb4394f538f5ad)
 
 ## [1.3.4] — 2026-11-21
 
